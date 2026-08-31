@@ -23,6 +23,11 @@ function setBadge(data) {
   badge.className = 'engine ' + (data.available ? 'remote' : 'local');
   badge.querySelector('b').textContent = data.label;
 }
+function renderProjects(projects) {
+  $('sidebar-projects').replaceChildren(...(projects.length
+    ? projects.map(name => Object.assign(document.createElement('a'), {href: '#archive', textContent: name}))
+    : [Object.assign(document.createElement('span'), {className: 'side-empty', textContent: 'Zatím bez projektů'})]));
+}
 
 function tick() {
   const seconds = Math.floor((Date.now() - startedAt) / 1000);
@@ -35,7 +40,9 @@ async function prepareProjectStep(kind) {
   $('save-youtube').hidden = kind === 'recording';
   go(2);
   const projects = await api.projects();
-  $('project-list').replaceChildren(...(projects.projects || []).map(name => Object.assign(document.createElement('option'), {value: name})));
+  const names = projects.projects || [];
+  $('project-list').replaceChildren(...names.map(name => Object.assign(document.createElement('option'), {value: name})));
+  renderProjects(names);
 }
 
 async function updateSuggestion() {
@@ -58,7 +65,7 @@ function stored(path) {
 export function initWizard(loadLibrary) {
   window.addEventListener('transcriber:library-changed', loadLibrary);
   api.asrStatus().then(setBadge).catch(() => setBadge({available: false, label: 'Lokální model'}));
-
+  api.projects().then(({projects = []}) => renderProjects(projects));
   $('start').onclick = async () => {
     $('start').disabled = true;
     const j = await api.startRecording();
@@ -113,6 +120,7 @@ export function initWizard(loadLibrary) {
     $('dl').href = api.downloadUrl(j.path);
     $('summary-status').textContent = 'Souhrn je uložený.';
     loadLibrary();
+    api.projects().then(({projects = []}) => renderProjects(projects));
   };
   $('new-recording').onclick = () => window.location.reload();
 }

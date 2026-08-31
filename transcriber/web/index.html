@@ -7,111 +7,86 @@
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-<header class="topbar">
-  <a class="brand" href="/"><span class="record-dot"></span> Transcriber</a>
-  <div id="asr-badge" class="engine checking"><span></span><b>Zjišťuji model</b></div>
-</header>
-
-<main class="shell">
-  <section class="intro">
-    <div>
-      <p class="eyebrow">ZÁZNAMOVÉ STUDIO</p>
-      <h1>Z meetingu rovnou<br>k tomu podstatnému.</h1>
-    </div>
-    <p>Nahraj rozhovor, zařaď ho k projektu a nech si připravit přepis i stručný souhrn.</p>
-  </section>
-
-  <section class="wizard" aria-label="Nový přepis">
-    <nav class="steps" aria-label="Postup">
-      <button class="step active" data-step="1"><span>1</span><b>Nahrát</b></button>
-      <i></i>
-      <button class="step" data-step="2" disabled><span>2</span><b>Zařadit</b></button>
-      <i></i>
-      <button class="step" data-step="3" disabled><span>3</span><b>Přepsat</b></button>
-      <i></i>
-      <button class="step" data-step="4" disabled><span>4</span><b>Shrnout</b></button>
+<div class="dashboard-shell">
+  <aside class="dashboard-sidebar">
+    <a class="brand" href="/"><span class="record-dot"></span> Transcriber</a>
+    <nav class="side-nav" aria-label="Hlavní navigace">
+      <a class="active" href="#workspace"><span>＋</span> Nový přepis</a>
+      <a href="#archive"><span>▤</span> Knihovna</a>
     </nav>
+    <section class="side-projects" aria-labelledby="projects-title">
+      <p class="side-label" id="projects-title">Projekty</p>
+      <div id="sidebar-projects"><span class="side-empty">Načítám…</span></div>
+    </section>
+    <div class="sidebar-status">
+      <p class="side-label">Přepisovací engine</p>
+      <div id="asr-badge" class="engine checking"><span></span><b>Zjišťuji model</b></div>
+    </div>
+  </aside>
 
-    <div class="stage active" data-stage="1">
-      <div class="stage-copy">
-        <span class="stage-number">01</span>
-        <div><h2>Jak vznikne nahrávka?</h2><p>Spusť záznam meetingu, nebo vlož veřejný odkaz na YouTube.</p></div>
-      </div>
-      <div class="source-grid">
-        <button id="start" class="source-card">
-          <span class="source-icon mic">●</span>
-          <b>Začít nahrávat</b>
-          <small>Mikrofon + zvuk počítače</small>
-        </button>
-        <div class="source-card youtube-card">
-          <span class="source-icon play">▶</span>
-          <b>Načíst z YouTube</b>
-          <small>Veřejné video nebo podcast</small>
-          <div class="inline-form"><input id="yturl" type="url" placeholder="youtube.com/watch?v=…"><button id="ytfetch">Načíst</button></div>
+  <main class="dashboard-main">
+    <header class="workspace-header" id="workspace">
+      <div><p class="eyebrow">PRACOVNÍ PLOCHA</p><h1>Nový přepis</h1></div>
+      <p>Nahraj meeting nebo načti video. Přepis a souhrn se uloží rovnou do projektu.</p>
+    </header>
+
+    <div class="workspace-grid">
+      <section class="wizard" aria-label="Nový přepis">
+        <nav class="steps" aria-label="Postup">
+          <button class="step active" data-step="1"><span>1</span><b>Nahrát</b></button><i></i>
+          <button class="step" data-step="2" disabled><span>2</span><b>Zařadit</b></button><i></i>
+          <button class="step" data-step="3" disabled><span>3</span><b>Přepsat</b></button><i></i>
+          <button class="step" data-step="4" disabled><span>4</span><b>Shrnout</b></button>
+        </nav>
+
+        <div class="stage active" data-stage="1">
+          <div class="stage-copy"><span class="stage-number">01</span><div><h2>Jak vznikne nahrávka?</h2><p>Spusť záznam meetingu, nebo vlož veřejný odkaz na YouTube.</p></div></div>
+          <div class="source-grid">
+            <button id="start" class="source-card"><span class="source-icon mic">●</span><b>Začít nahrávat</b><small>Mikrofon + zvuk počítače</small></button>
+            <div class="source-card youtube-card"><span class="source-icon play">▶</span><b>Načíst z YouTube</b><small>Veřejné video nebo podcast</small><div class="inline-form"><input id="yturl" type="url" placeholder="youtube.com/watch?v=…"><button id="ytfetch">Načíst</button></div></div>
+          </div>
+          <div id="recording-live" class="recording-live" hidden><div class="pulse"></div><div><b>Nahrávání běží</b><span id="timer">00:00</span></div><button id="to-project" class="primary">Zařadit k projektu →</button></div>
         </div>
-      </div>
-      <div id="recording-live" class="recording-live" hidden>
-        <div class="pulse"></div><div><b>Nahrávání běží</b><span id="timer">00:00</span></div>
-        <button id="to-project" class="primary">Zařadit k projektu →</button>
-      </div>
+
+        <div class="stage" data-stage="2">
+          <div class="stage-copy"><span class="stage-number">02</span><div><h2>Kam záznam patří?</h2><p>Projekt určí výchozí složku. Název i cestu můžeš změnit.</p></div></div>
+          <div class="form-grid">
+            <label><span>Projekt</span><input id="project" list="project-list" placeholder="Vyber nebo napiš nový projekt"><datalist id="project-list"></datalist></label>
+            <label><span>Složka</span><input id="folder" type="text" placeholder="Doplní se podle projektu"></label>
+            <label class="wide"><span>Název nahrávky</span><input id="filename" type="text" placeholder="Např. Týdenní porada — 31. 8. 2026"></label>
+          </div>
+          <div class="stage-actions"><button id="back-record" class="quiet">← Zpět</button><button id="stop" class="primary">Zastavit a uložit →</button><button id="save-youtube" class="primary" hidden>Zařadit nahrávku →</button></div>
+        </div>
+
+        <div class="stage" data-stage="3">
+          <div class="stage-copy"><span class="stage-number">03</span><div><h2>Připravit přepis</h2><p id="stored-path">Nahrávka je bezpečně uložená.</p></div></div>
+          <div class="transcribe-options">
+            <label><span>Jazyk</span><select id="lang"><option value="cs">Čeština</option><option value="en">Angličtina</option><option value="">Rozpoznat automaticky</option></select></label>
+            <label><span>Počet mluvčích</span><input id="numspeakers" type="number" min="1" placeholder="Nevím"><small>1 = bez rozlišení mluvčích</small></label>
+          </div>
+          <div id="bar"><div id="fill"></div></div><p class="status-line" id="status">Připraveno k přepisu.</p>
+          <div class="stage-actions"><button id="transcribe" class="primary">Spustit přepis →</button></div>
+        </div>
+
+        <div class="stage" data-stage="4">
+          <div class="stage-copy"><span class="stage-number">04</span><div><h2>Co z meetingu plyne?</h2><p>Přepis je hotový. Souhrn připraví Claude přes privátní omniroute.</p></div></div>
+          <div class="summary-offer"><div><b>Souhrn, rozhodnutí a úkoly</b><span>Uloží se vedle přepisu jako <code>.summary.md</code>.</span></div><button id="summarize" class="primary">Vytvořit souhrn</button></div>
+          <p class="status-line" id="summary-status"></p><div class="stage-actions"><button id="new-recording" class="quiet">+ Nový záznam</button></div>
+        </div>
+      </section>
+
+      <section class="result" id="result">
+        <header><div><p class="eyebrow">VÝSTUP</p><h2 id="output-title">Přepis</h2></div><a id="dl" href="/download">Stáhnout ↓</a></header>
+        <textarea id="out" placeholder="Hotový přepis nebo souhrn se objeví zde…" readonly></textarea>
+      </section>
     </div>
 
-    <div class="stage" data-stage="2">
-      <div class="stage-copy">
-        <span class="stage-number">02</span>
-        <div><h2>Kam záznam patří?</h2><p>Projekt určí výchozí složku. Název i cestu můžeš změnit.</p></div>
-      </div>
-      <div class="form-grid">
-        <label><span>Projekt</span><input id="project" list="project-list" placeholder="Vyber nebo napiš nový projekt"><datalist id="project-list"></datalist></label>
-        <label><span>Složka</span><input id="folder" type="text" placeholder="Doplní se podle projektu"></label>
-        <label class="wide"><span>Název nahrávky</span><input id="filename" type="text" placeholder="Např. Týdenní porada — 31. 8. 2026"></label>
-      </div>
-      <div class="stage-actions">
-        <button id="back-record" class="quiet">← Zpět</button>
-        <button id="stop" class="primary">Zastavit a uložit →</button>
-        <button id="save-youtube" class="primary" hidden>Zařadit nahrávku →</button>
-      </div>
-    </div>
-
-    <div class="stage" data-stage="3">
-      <div class="stage-copy">
-        <span class="stage-number">03</span>
-        <div><h2>Připravit přepis</h2><p id="stored-path">Nahrávka je bezpečně uložená.</p></div>
-      </div>
-      <div class="transcribe-options">
-        <label><span>Jazyk</span><select id="lang"><option value="cs">Čeština</option><option value="en">Angličtina</option><option value="">Rozpoznat automaticky</option></select></label>
-        <label><span>Počet mluvčích</span><input id="numspeakers" type="number" min="1" placeholder="Nevím"><small>1 = bez rozlišení mluvčích</small></label>
-      </div>
-      <div id="bar"><div id="fill"></div></div>
-      <p class="status-line" id="status">Připraveno k přepisu.</p>
-      <div class="stage-actions"><button id="transcribe" class="primary">Spustit přepis →</button></div>
-    </div>
-
-    <div class="stage" data-stage="4">
-      <div class="stage-copy">
-        <span class="stage-number">04</span>
-        <div><h2>Co z meetingu plyne?</h2><p>Přepis je hotový. Souhrn připraví Claude přes privátní omniroute na tomto počítači.</p></div>
-      </div>
-      <div class="summary-offer">
-        <div><b>Souhrn, rozhodnutí a úkoly</b><span>Uloží se vedle přepisu jako <code>.summary.md</code>.</span></div>
-        <button id="summarize" class="primary">Vytvořit souhrn</button>
-      </div>
-      <p class="status-line" id="summary-status"></p>
-      <div class="stage-actions"><button id="new-recording" class="quiet">+ Nový záznam</button></div>
-    </div>
-  </section>
-
-  <section class="result" id="result">
-    <header><div><p class="eyebrow">VÝSTUP</p><h2 id="output-title">Přepis</h2></div><a id="dl" href="/download">Stáhnout ↓</a></header>
-    <textarea id="out" placeholder="Hotový přepis nebo souhrn se objeví zde…" readonly></textarea>
-  </section>
-
-  <section class="library-card">
-    <header><div><p class="eyebrow">ARCHIV</p><h2>Knihovna</h2></div><div class="row"><button class="small quiet" id="mkdir">+ Složka</button><button class="small quiet" id="openhere">Otevřít v Claude Code</button></div></header>
-    <div class="crumbs" id="crumbs"></div>
-    <div id="library"></div>
-  </section>
-</main>
+    <section class="library-card" id="archive">
+      <header><div><p class="eyebrow">ARCHIV</p><h2>Knihovna</h2></div><div class="row"><button class="small quiet" id="mkdir">+ Složka</button><button class="small quiet" id="openhere">Otevřít v Claude Code</button></div></header>
+      <div class="crumbs" id="crumbs"></div><div id="library"></div>
+    </section>
+  </main>
+</div>
 <script type="module" src="/static/js/main.js"></script>
 </body>
 </html>
