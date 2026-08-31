@@ -1,0 +1,80 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Transcriber</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<div class="shell">
+<div class="topbar">
+  <div class="brand"><span class="dot"></span> Transcriber</div>
+</div>
+
+<div class="hero">
+  <h1>Přepis meetingu</h1>
+  <p>Vše běží lokálně na tvém stroji — audio nikdy neopustí počítač.</p>
+</div>
+
+<div class="grid">
+  <div class="card" style="grid-column:1 / -1">
+    <h3>Kam uložit</h3>
+    <p class="sub">Platí pro nahrávku i YouTube stažení níže</p>
+    <div class="row">
+      <input id="folder" type="text" placeholder="Složka, např. Podcasty/Keto">
+      <input id="filename" type="text" placeholder="Název souboru (nepovinné)">
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="iconcircle">🎙️</div>
+    <h3>Nahrávka meetingu</h3>
+    <p class="sub">Mikrofon + zvuk z počítače</p>
+    <div class="row">
+      <button id="start">Start nahrávání</button>
+      <button id="stop" class="secondary" disabled>Stop</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="iconcircle">▶️</div>
+    <h3>...nebo YouTube video</h3>
+    <p class="sub">Vlož odkaz na veřejné video</p>
+    <div class="row">
+      <input id="yturl" type="text" placeholder="https://youtube.com/watch?v=...">
+      <button id="ytfetch" class="secondary">Stáhnout</button>
+    </div>
+  </div>
+
+  <div class="card" style="grid-column:1 / -1">
+    <h3>Přepis</h3>
+    <p class="sub">Jazyk a spuštění přepisu s rozpoznáním mluvčích</p>
+    <div class="row">
+      <select id="lang">
+        <option value="cs" selected>Čeština</option>
+        <option value="en">Angličtina</option>
+        <option value="">Auto-detekce</option>
+      </select>
+      <input id="numspeakers" type="text" inputmode="numeric" placeholder="Počet mluvčích (1 = bez diarizace)" style="width:230px">
+      <button id="transcribe" class="accent" disabled>Přepsat</button>
+    </div>
+    <div id="bar"><div id="fill"></div></div>
+    <div class="status-line" id="status">Připraveno.</div>
+  </div>
+
+  <div class="card libcard">
+    <h3>
+      Knihovna
+      <span class="row">
+        <button class="small secondary" id="mkdir">+ Nová složka</button>
+        <button class="small secondary" id="openhere">Otevřít v Claude Code</button>
+      </span>
+    </h3>
+    <div class="crumbs" id="crumbs"></div>
+    <div id="library"></div>
+  </div>
+
+  <div class="output">
+    <h3>Výstup <a id="dl" href="/download">Stáhnout .txt ↓</a></h3>
+    <textarea id="out" placeholder="Přepis se objeví zde..." readonly></textarea>
+  </div>
+</div>
+</div>
+<script type="module" src="/static/js/main.js"></script>
+</body></html>
