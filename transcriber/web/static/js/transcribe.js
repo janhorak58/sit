@@ -4,6 +4,7 @@ import {$, status} from './dom.js';
 const POLL_MS = 1000;
 
 function showTranscript(text, savedPath) {
+  $('output-title').textContent = 'Přepis';
   $('out').value = text;
   $('dl').style.display = 'inline';
   $('dl').href = api.downloadUrl(savedPath);
@@ -24,7 +25,7 @@ export async function transcribePath(path, onDone) {
       clearInterval(poll);
       showTranscript(j.text, j.saved_path);
       $('transcribe').disabled = false;
-      if (onDone) onDone();
+      if (onDone) onDone(j);
     } else if (j.stage === 'error') {
       clearInterval(poll);
       status('Chyba: ' + j.error);

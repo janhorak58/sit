@@ -1,80 +1,117 @@
-<!doctype html><html><head><meta charset="utf-8"><title>Transcriber</title>
-<link rel="stylesheet" href="/static/styles.css">
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Transcriber</title>
+  <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-<div class="shell">
-<div class="topbar">
-  <div class="brand"><span class="dot"></span> Transcriber</div>
-</div>
+<header class="topbar">
+  <a class="brand" href="/"><span class="record-dot"></span> Transcriber</a>
+  <div id="asr-badge" class="engine checking"><span></span><b>Zjišťuji model</b></div>
+</header>
 
-<div class="hero">
-  <h1>Přepis meetingu</h1>
-  <p>Vše běží lokálně na tvém stroji — audio nikdy neopustí počítač.</p>
-</div>
-
-<div class="grid">
-  <div class="card" style="grid-column:1 / -1">
-    <h3>Kam uložit</h3>
-    <p class="sub">Platí pro nahrávku i YouTube stažení níže</p>
-    <div class="row">
-      <input id="folder" type="text" placeholder="Složka, např. Podcasty/Keto">
-      <input id="filename" type="text" placeholder="Název souboru (nepovinné)">
+<main class="shell">
+  <section class="intro">
+    <div>
+      <p class="eyebrow">ZÁZNAMOVÉ STUDIO</p>
+      <h1>Z meetingu rovnou<br>k tomu podstatnému.</h1>
     </div>
-  </div>
+    <p>Nahraj rozhovor, zařaď ho k projektu a nech si připravit přepis i stručný souhrn.</p>
+  </section>
 
-  <div class="card">
-    <div class="iconcircle">🎙️</div>
-    <h3>Nahrávka meetingu</h3>
-    <p class="sub">Mikrofon + zvuk z počítače</p>
-    <div class="row">
-      <button id="start">Start nahrávání</button>
-      <button id="stop" class="secondary" disabled>Stop</button>
+  <section class="wizard" aria-label="Nový přepis">
+    <nav class="steps" aria-label="Postup">
+      <button class="step active" data-step="1"><span>1</span><b>Nahrát</b></button>
+      <i></i>
+      <button class="step" data-step="2" disabled><span>2</span><b>Zařadit</b></button>
+      <i></i>
+      <button class="step" data-step="3" disabled><span>3</span><b>Přepsat</b></button>
+      <i></i>
+      <button class="step" data-step="4" disabled><span>4</span><b>Shrnout</b></button>
+    </nav>
+
+    <div class="stage active" data-stage="1">
+      <div class="stage-copy">
+        <span class="stage-number">01</span>
+        <div><h2>Jak vznikne nahrávka?</h2><p>Spusť záznam meetingu, nebo vlož veřejný odkaz na YouTube.</p></div>
+      </div>
+      <div class="source-grid">
+        <button id="start" class="source-card">
+          <span class="source-icon mic">●</span>
+          <b>Začít nahrávat</b>
+          <small>Mikrofon + zvuk počítače</small>
+        </button>
+        <div class="source-card youtube-card">
+          <span class="source-icon play">▶</span>
+          <b>Načíst z YouTube</b>
+          <small>Veřejné video nebo podcast</small>
+          <div class="inline-form"><input id="yturl" type="url" placeholder="youtube.com/watch?v=…"><button id="ytfetch">Načíst</button></div>
+        </div>
+      </div>
+      <div id="recording-live" class="recording-live" hidden>
+        <div class="pulse"></div><div><b>Nahrávání běží</b><span id="timer">00:00</span></div>
+        <button id="to-project" class="primary">Zařadit k projektu →</button>
+      </div>
     </div>
-  </div>
 
-  <div class="card">
-    <div class="iconcircle">▶️</div>
-    <h3>...nebo YouTube video</h3>
-    <p class="sub">Vlož odkaz na veřejné video</p>
-    <div class="row">
-      <input id="yturl" type="text" placeholder="https://youtube.com/watch?v=...">
-      <button id="ytfetch" class="secondary">Stáhnout</button>
+    <div class="stage" data-stage="2">
+      <div class="stage-copy">
+        <span class="stage-number">02</span>
+        <div><h2>Kam záznam patří?</h2><p>Projekt určí výchozí složku. Název i cestu můžeš změnit.</p></div>
+      </div>
+      <div class="form-grid">
+        <label><span>Projekt</span><input id="project" list="project-list" placeholder="Vyber nebo napiš nový projekt"><datalist id="project-list"></datalist></label>
+        <label><span>Složka</span><input id="folder" type="text" placeholder="Doplní se podle projektu"></label>
+        <label class="wide"><span>Název nahrávky</span><input id="filename" type="text" placeholder="Např. Týdenní porada — 31. 8. 2026"></label>
+      </div>
+      <div class="stage-actions">
+        <button id="back-record" class="quiet">← Zpět</button>
+        <button id="stop" class="primary">Zastavit a uložit →</button>
+        <button id="save-youtube" class="primary" hidden>Zařadit nahrávku →</button>
+      </div>
     </div>
-  </div>
 
-  <div class="card" style="grid-column:1 / -1">
-    <h3>Přepis</h3>
-    <p class="sub">Jazyk a spuštění přepisu s rozpoznáním mluvčích</p>
-    <div class="row">
-      <select id="lang">
-        <option value="cs" selected>Čeština</option>
-        <option value="en">Angličtina</option>
-        <option value="">Auto-detekce</option>
-      </select>
-      <input id="numspeakers" type="text" inputmode="numeric" placeholder="Počet mluvčích (1 = bez diarizace)" style="width:230px">
-      <button id="transcribe" class="accent" disabled>Přepsat</button>
+    <div class="stage" data-stage="3">
+      <div class="stage-copy">
+        <span class="stage-number">03</span>
+        <div><h2>Připravit přepis</h2><p id="stored-path">Nahrávka je bezpečně uložená.</p></div>
+      </div>
+      <div class="transcribe-options">
+        <label><span>Jazyk</span><select id="lang"><option value="cs">Čeština</option><option value="en">Angličtina</option><option value="">Rozpoznat automaticky</option></select></label>
+        <label><span>Počet mluvčích</span><input id="numspeakers" type="number" min="1" placeholder="Nevím"><small>1 = bez rozlišení mluvčích</small></label>
+      </div>
+      <div id="bar"><div id="fill"></div></div>
+      <p class="status-line" id="status">Připraveno k přepisu.</p>
+      <div class="stage-actions"><button id="transcribe" class="primary">Spustit přepis →</button></div>
     </div>
-    <div id="bar"><div id="fill"></div></div>
-    <div class="status-line" id="status">Připraveno.</div>
-  </div>
 
-  <div class="card libcard">
-    <h3>
-      Knihovna
-      <span class="row">
-        <button class="small secondary" id="mkdir">+ Nová složka</button>
-        <button class="small secondary" id="openhere">Otevřít v Claude Code</button>
-      </span>
-    </h3>
+    <div class="stage" data-stage="4">
+      <div class="stage-copy">
+        <span class="stage-number">04</span>
+        <div><h2>Co z meetingu plyne?</h2><p>Přepis je hotový. Souhrn připraví Claude přes privátní omniroute na tomto počítači.</p></div>
+      </div>
+      <div class="summary-offer">
+        <div><b>Souhrn, rozhodnutí a úkoly</b><span>Uloží se vedle přepisu jako <code>.summary.md</code>.</span></div>
+        <button id="summarize" class="primary">Vytvořit souhrn</button>
+      </div>
+      <p class="status-line" id="summary-status"></p>
+      <div class="stage-actions"><button id="new-recording" class="quiet">+ Nový záznam</button></div>
+    </div>
+  </section>
+
+  <section class="result" id="result">
+    <header><div><p class="eyebrow">VÝSTUP</p><h2 id="output-title">Přepis</h2></div><a id="dl" href="/download">Stáhnout ↓</a></header>
+    <textarea id="out" placeholder="Hotový přepis nebo souhrn se objeví zde…" readonly></textarea>
+  </section>
+
+  <section class="library-card">
+    <header><div><p class="eyebrow">ARCHIV</p><h2>Knihovna</h2></div><div class="row"><button class="small quiet" id="mkdir">+ Složka</button><button class="small quiet" id="openhere">Otevřít v Claude Code</button></div></header>
     <div class="crumbs" id="crumbs"></div>
     <div id="library"></div>
-  </div>
-
-  <div class="output">
-    <h3>Výstup <a id="dl" href="/download">Stáhnout .txt ↓</a></h3>
-    <textarea id="out" placeholder="Přepis se objeví zde..." readonly></textarea>
-  </div>
-</div>
-</div>
+  </section>
+</main>
 <script type="module" src="/static/js/main.js"></script>
-</body></html>
+</body>
+</html>

@@ -2,6 +2,7 @@
 // currently open in the library browser.
 export const state = {
   currentPath: null,
+  transcriptPath: null,
   currentFolder: '',
 };
 

@@ -1,6 +1,6 @@
 """HTTP surface, one router per concern."""
 
-from . import library, pages, recording, transcription, youtube
+from . import library, pages, recording, transcription, workflow, youtube
 
 routers = [
     pages.router,
@@ -8,6 +8,7 @@ routers = [
     youtube.router,
     transcription.router,
     library.router,
+    workflow.router,
 ]
 
 __all__ = ["routers"]

@@ -34,3 +34,12 @@ class MoveReq(BaseModel):
 
 class DeleteReq(BaseModel):
     path: str
+
+
+class SuggestReq(BaseModel):
+    project: str
+
+
+class SummaryReq(BaseModel):
+    path: str
+    project: str = ""

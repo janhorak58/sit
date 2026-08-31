@@ -20,6 +20,10 @@ export const fetchYoutube = (url, folder, filename) => post('/youtube', {url, fo
 export const transcribe = (path, language, num_speakers) =>
   post('/transcribe', {path, language, num_speakers});
 export const getProgress = () => get('/progress');
+export const asrStatus = () => get('/asr/status');
+export const projects = () => get('/projects');
+export const suggestFolder = project => post('/projects/suggest-folder', {project});
+export const summarize = (path, project) => post('/summaries', {path, project});
 
 export const browse = folder => get('/library/browse?path=' + encodeURIComponent(folder));
 export const readFile = path => get('/library/file?path=' + encodeURIComponent(path));

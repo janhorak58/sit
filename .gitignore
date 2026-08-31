@@ -7,3 +7,4 @@ venv/
 data/
 *.wav
 .env
+graphify-out/

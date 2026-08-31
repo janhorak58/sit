@@ -2,9 +2,25 @@
 
 import threading
 
-from .models import get_diarize_pipeline, get_whisper_model
+from .asr import transcribe
+from .models import get_diarize_pipeline
 from .paths import rel_to_data
 from .progress import progress
+
+
+def transcribe_segments(wav_path, language, cap):
+    """Transcribe remotely when available, with transparent local fallback."""
+    def on_segment(seg, duration):
+        pct = min(cap - 1, int(seg.end / max(duration, 0.01) * cap))
+        progress.update(percent=pct, message=f"Přepisuji audio... {pct}%")
+
+    result = transcribe(wav_path, language, on_segment)
+    progress.update(
+        backend=result.backend,
+        message="Přepisuji na pracovním Sparku..." if result.backend == "spark"
+        else "Přepisuji lokálně...",
+    )
+    return result.segments
 
 
 def speaker_at(diarization, t):
@@ -15,19 +31,6 @@ def speaker_at(diarization, t):
         if overlap > best_overlap:
             best_overlap, best = overlap, speaker
     return best or "SPEAKER_00"
-
-
-def transcribe_segments(wav_path, language, cap):
-    """Run whisper, reporting progress up to ``cap`` percent."""
-    model = get_whisper_model()
-    kwargs = {"language": language} if language else {}
-    segments_gen, info = model.transcribe(str(wav_path), **kwargs)
-    segments = []
-    for seg in segments_gen:
-        segments.append(seg)
-        pct = min(cap - 1, int(seg.end / max(info.duration, 0.01) * cap))
-        progress.update(percent=pct, message=f"Přepisuji audio... {pct}%")
-    return segments
 
 
 def label_speakers(wav_path, segments, num_speakers):

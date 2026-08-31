@@ -25,8 +25,8 @@ def browse(rel_folder):
         if p.is_dir() and p.name not in hidden and not p.name.startswith(".")
     )
     files = [p.name for p in entries if p.is_file()]
-    txt_stems = {Path(f).stem for f in files if f.endswith(".txt")}
-
+    txt_stems = {Path(f).stem for f in files if f.endswith(".txt") and not f.endswith(".summary.txt")}
+    summary_stems = {f[:-11] for f in files if f.endswith(".summary.md")}
     audio_dir = target / AUDIO_SUBDIR
     wav_map = {p.stem: p for p in audio_dir.glob("*.wav")} if audio_dir.is_dir() else {}
     legacy_wav = {
@@ -41,6 +41,8 @@ def browse(rel_folder):
         "txt": n in txt_stems,
         "wav": n in wav_map,
         "wav_path": rel_to_data(wav_map[n]) if n in wav_map else None,
+        "summary": n in summary_stems,
+        "summary_path": rel_to_data(target / f"{n}.summary.md") if n in summary_stems else None,
     } for n in names]
     return {"folder": rel_folder, "subfolders": subfolders, "items": items}
 

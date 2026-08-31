@@ -74,6 +74,11 @@ function renderItem(item) {
   } else {
     left.push(el('span', {className: 'pending', textContent: item.name + ' (nepřepsáno)'}));
   }
+  if (item.summary) {
+    const summary = el('span', {className: 'summary-link', textContent: 'Souhrn'});
+    summary.onclick = () => viewFile(item.summary_path);
+    left.push(summary);
+  }
 
   const right = [];
   if (!item.txt && item.wav) {
@@ -91,6 +96,11 @@ function renderItem(item) {
     const delTxt = el('button', {className: 'icon', textContent: '🗑T', title: 'Smazat přepis'});
     delTxt.onclick = () => deletePath(childPath(item.name) + '.txt', 'přepis');
     right.push(delTxt);
+  }
+  if (item.summary) {
+    const delSummary = el('button', {className: 'icon', textContent: '🗑S', title: 'Smazat souhrn'});
+    delSummary.onclick = () => deletePath(item.summary_path, 'souhrn');
+    right.push(delSummary);
   }
   if (item.wav) {
     const delWav = el('button', {className: 'icon', textContent: '🗑A', title: 'Smazat nahrávku'});

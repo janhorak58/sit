@@ -9,6 +9,7 @@ IDLE = {
     "text": None,
     "error": None,
     "saved_path": None,
+    "backend": None,
 }
 
 

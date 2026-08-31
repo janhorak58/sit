@@ -15,6 +15,12 @@ WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "small")
 WHISPER_DEVICE = os.environ.get("WHISPER_DEVICE", "cpu")
 WHISPER_COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "int8")
 DIARIZE_MODEL = os.environ.get("DIARIZE_MODEL", "pyannote/speaker-diarization-3.1")
+SPARK_WHISPER_URL = os.environ.get(
+    "SPARK_WHISPER_URL", "http://127.0.0.1:8204/v1/audio/transcriptions"
+)
+SPARK_WHISPER_MODEL = os.environ.get("SPARK_WHISPER_MODEL", "large-v3")
+OMNIROUTE_URL = os.environ.get("OMNIROUTE_URL", "http://127.0.0.1:20128")
+OMNIROUTE_MODEL = os.environ.get("OMNIROUTE_MODEL", "cc/claude-sonnet-5")
 
 SINK_NAME = "meeting_rec"
 SAMPLE_RATE = "16000"
