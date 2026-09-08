@@ -1,5 +1,7 @@
 """Application factory."""
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -7,6 +9,7 @@ from starlette.types import Scope
 
 from .config import STATIC_DIR, ensure_dirs
 from .errors import AppError
+from .recorder import recorder
 from .routes import routers
 
 
@@ -24,9 +27,17 @@ class NoCacheStaticFiles(StaticFiles):
         return response
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        yield
+    finally:
+        recorder.stop()
+
+
 def create_app():
     ensure_dirs()
-    app = FastAPI(title="ŠIT — ŠIKOVNÝ INTERAKTIVNÍ TRANSKRIPTOR")
+    app = FastAPI(title="ŠIT — ŠIKOVNÝ INTERAKTIVNÍ TRANSKRIPTOR", lifespan=lifespan)
 
     @app.exception_handler(AppError)
     def _app_error(request: Request, exc: AppError):

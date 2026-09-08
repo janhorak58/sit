@@ -7,7 +7,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DATA_DIR = Path(os.environ.get("TRANSCRIBER_DATA_DIR", "/data"))
+_data_home = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+if not _data_home.is_absolute():
+    _data_home = Path.home() / ".local" / "share"
+DATA_DIR = Path(
+    os.environ.get("TRANSCRIBER_DATA_DIR") or _data_home / "sit"
+).expanduser().resolve()
 SCRATCH_DIR = DATA_DIR / "_scratch"
 WAV_PATH = SCRATCH_DIR / "current.wav"
 
@@ -34,7 +39,7 @@ MAX_RECORDING_SECONDS = int(os.environ.get("MAX_RECORDING_SECONDS", str(3 * 3600
 SINK_NAME = "meeting_rec"
 SAMPLE_RATE = "16000"
 
-HOST = os.environ.get("TRANSCRIBER_HOST", "0.0.0.0")
+HOST = os.environ.get("TRANSCRIBER_HOST", "127.0.0.1")
 PORT = int(os.environ.get("TRANSCRIBER_PORT", "47831"))
 
 WEB_DIR = Path(__file__).resolve().parent / "web"

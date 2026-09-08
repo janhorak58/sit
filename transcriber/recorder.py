@@ -2,6 +2,7 @@
 
 import signal
 import subprocess
+import sys
 import threading
 import time
 
@@ -11,9 +12,22 @@ from .config import MAX_RECORDING_SECONDS, SAMPLE_RATE, SINK_NAME, WAV_PATH
 
 
 def pactl(*args):
-    return subprocess.run(
-        ["pactl", *args], capture_output=True, text=True, check=True
-    ).stdout.strip()
+    try:
+        return subprocess.run(
+            ["pactl", *args], capture_output=True, text=True, check=True
+        ).stdout.strip()
+    except FileNotFoundError as exc:
+        raise AppError(
+            "Chybí pactl. Nainstaluj pulseaudio-utils (Ubuntu/Debian) nebo "
+            "libpulse (Arch). Hotový audiosoubor můžeš nahrát i bez něj."
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        raise AppError(
+            "Zvukový server nepodporuje požadované nahrávání nebo není dostupný. "
+            "Zkontroluj PulseAudio / PipeWire-Pulse a přístup k mikrofonu. "
+            "WSLg nemusí podporovat loopback zvuku Windows; použij nahrání souboru. "
+            f"Detail: {(exc.stderr or '').strip()}"
+        ) from exc
 
 
 class Recorder:
@@ -34,6 +48,11 @@ class Recorder:
         with self._lock:
             if self.is_recording:
                 raise AppError("Nahrávání už běží.")
+            if not sys.platform.startswith("linux"):
+                raise AppError(
+                    "Přímé nahrávání vyžaduje Linux s PulseAudio / PipeWire-Pulse. "
+                    "Na této platformě použij nahrání audiosouboru."
+                )
             try:
                 self.modules["sink"] = pactl(
                     "load-module", "module-null-sink", f"sink_name={SINK_NAME}",
@@ -51,6 +70,11 @@ class Recorder:
                     "-ac", "1", "-ar", SAMPLE_RATE, str(self.wav_path),
                 ])
                 self.started_at = time.time()
+            except FileNotFoundError as exc:
+                self._stop_locked()
+                raise AppError(
+                    "Chybí ffmpeg. Nainstaluj ffmpeg pro nahrávání a převod audia."
+                ) from exc
             except Exception:
                 self._stop_locked()
                 raise
