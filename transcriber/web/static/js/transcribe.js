@@ -2,34 +2,59 @@ import * as api from './api.js';
 import {$, status} from './dom.js';
 
 const POLL_MS = 1000;
+let pollTimer = null;
 
-function showTranscript(text, savedPath) {
-  $('output-title').textContent = 'Přepis';
-  $('out').value = text;
-  $('dl').style.display = 'inline';
-  $('dl').href = api.downloadUrl(savedPath);
+
+function setBusy(busy) {
+  $('transcribe').disabled = busy;
+  $('bar').style.display = 'block';
 }
 
-// Kick off a transcription and poll /progress until it settles.
-export async function transcribePath(path, onDone) {
-  $('transcribe').disabled = true;
-  $('bar').style.display = 'block';
-  const n = parseInt($('numspeakers').value, 10);
-  await api.transcribe(path, $('lang').value, Number.isInteger(n) ? n : null);
-
-  const poll = setInterval(async () => {
-    const j = await api.getProgress();
-    $('fill').style.width = j.percent + '%';
-    status(j.message);
-    if (j.stage === 'done') {
-      clearInterval(poll);
-      showTranscript(j.text, j.saved_path);
-      $('transcribe').disabled = false;
-      if (onDone) onDone(j);
-    } else if (j.stage === 'error') {
-      clearInterval(poll);
-      status('Chyba: ' + j.error);
-      $('transcribe').disabled = false;
+export function watchProgress(onDone) {
+  clearTimeout(pollTimer);
+  setBusy(true);
+  const poll = async () => {
+    try {
+      const progress = await api.getProgress();
+      if (progress.error) throw new Error(progress.error);
+      $('fill').style.width = (progress.percent || 0) + '%';
+      status(progress.message || 'Přepisuji…');
+      if (progress.stage === 'done') {
+        setBusy(false);
+        if (progress.warning) status('Upozornění: ' + progress.warning);
+        window.dispatchEvent(new CustomEvent('transcriber:transcribe-done', {detail: progress}));
+        if (onDone) onDone(progress);
+        return;
+      }
+      if (progress.stage === 'error') {
+        setBusy(false);
+        status('Chyba: ' + progress.error);
+        return;
+      }
+      pollTimer = setTimeout(poll, POLL_MS);
+    } catch (error) {
+      setBusy(false);
+      status('Chyba: ' + error.message);
     }
-  }, POLL_MS);
+  };
+  poll();
+}
+
+export async function transcribePath(path, onDone) {
+  setBusy(true);
+  try {
+    const n = parseInt($('numspeakers').value, 10);
+    const started = await api.transcribe(path, $('lang').value, Number.isInteger(n) ? n : null);
+    if (started.error) throw new Error(started.error);
+    watchProgress(onDone);
+  } catch (error) {
+    setBusy(false);
+    status('Chyba: ' + error.message);
+  }
+}
+
+export function openRecordingWorkspace(path, title, hasTranscript = false) {
+  window.dispatchEvent(new CustomEvent('transcriber:transcribe-start', {
+    detail: {path, title, hasTranscript},
+  }));
 }

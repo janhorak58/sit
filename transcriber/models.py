@@ -27,6 +27,11 @@ def get_whisper_model():
 
 
 def get_diarize_pipeline():
+    if not HF_TOKEN:
+        raise RuntimeError(
+            "HF_TOKEN není nastaven; model pyannote/speaker-diarization-3.1 "
+            "vyžaduje schválený HuggingFace přístup."
+        )
     if _cache["diarize"] is None:
         import torch
 

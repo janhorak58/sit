@@ -13,14 +13,18 @@ def sanitize_component(name, fallback):
     name = _ILLEGAL.sub("_", (name or "").strip())
     return name or fallback
 
+def valid_component(name):
+    """Return ``name`` only when it is a non-empty portable file component."""
+    return bool(name and name not in {".", ".."} and sanitize_component(name, "") == name)
+
 
 def safe_target_dir(folder):
     """Resolve ``folder`` under DATA_DIR, creating it. Falls back to DATA_DIR."""
     parts = [p for p in (folder or "").strip("/").split("/") if p not in ("", ".", "..")]
-    d = DATA_DIR.joinpath(*parts) if parts else DATA_DIR
-    d = d.resolve()
-    if not str(d).startswith(str(DATA_DIR.resolve())):
-        d = DATA_DIR
+    root = DATA_DIR.resolve()
+    d = (root.joinpath(*parts) if parts else root).resolve()
+    if not d.is_relative_to(root):
+        d = root
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -30,7 +34,7 @@ def resolve_in_data(path):
     if not path:
         return None
     target = (DATA_DIR / path).resolve()
-    if not str(target).startswith(str(DATA_DIR.resolve())):
+    if not target.is_relative_to(DATA_DIR.resolve()):
         return None
     return target
 

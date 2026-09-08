@@ -1,8 +1,7 @@
 FROM python:3.11-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg pulseaudio-utils curl unzip \
-    && curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh \
+    ffmpeg pulseaudio-utils \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

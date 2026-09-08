@@ -5,11 +5,19 @@ Layout: transcripts live at ``<folder>/<name>.txt``, audio at
 """
 
 from datetime import datetime
+import json
 from pathlib import Path
+import shutil
 
 from .config import AUDIO_SUBDIR, DATA_DIR, INTERNAL_TOP_DIRS
 from .errors import AppError
-from .paths import rel_to_data, resolve_in_data, safe_target_dir, sanitize_component
+from .paths import (
+    rel_to_data,
+    resolve_in_data,
+    safe_target_dir,
+    sanitize_component,
+    valid_component,
+)
 
 
 def browse(rel_folder):
@@ -27,6 +35,8 @@ def browse(rel_folder):
     files = [p.name for p in entries if p.is_file()]
     txt_stems = {Path(f).stem for f in files if f.endswith(".txt") and not f.endswith(".summary.txt")}
     summary_stems = {f[:-11] for f in files if f.endswith(".summary.md")}
+    meeting_json_stems = {f[:-len(".meeting.json")] for f in files if f.endswith(".meeting.json")}
+    summary_json_stems = {f[:-len(".summary.json")] for f in files if f.endswith(".summary.json")}
     audio_dir = target / AUDIO_SUBDIR
     wav_map = {p.stem: p for p in audio_dir.glob("*.wav")} if audio_dir.is_dir() else {}
     legacy_wav = {
@@ -43,12 +53,42 @@ def browse(rel_folder):
         "wav_path": rel_to_data(wav_map[n]) if n in wav_map else None,
         "summary": n in summary_stems,
         "summary_path": rel_to_data(target / f"{n}.summary.md") if n in summary_stems else None,
+        "segments": n in meeting_json_stems,
+        "summary_json": n in summary_json_stems,
     } for n in names]
     return {"folder": rel_folder, "subfolders": subfolders, "items": items}
 
 
 def make_dir(folder):
     return rel_to_data(safe_target_dir(folder))
+
+
+def _mutable_folder(path):
+    target = resolve_in_data(path)
+    if target is None or not target.is_dir() or target.resolve() == DATA_DIR.resolve():
+        raise AppError("Složka nenalezena.")
+    relative = target.resolve().relative_to(DATA_DIR.resolve())
+    if relative.parts[0] in INTERNAL_TOP_DIRS or relative.parts[0].startswith("."):
+        raise AppError("Tuto složku nelze změnit.")
+    return target
+
+
+def rename_folder(path, new_name):
+    """Rename one library folder without moving it outside its parent."""
+    if not valid_component(new_name):
+        raise AppError("Neplatný název složky.")
+    source = _mutable_folder(path)
+    destination = source.with_name(new_name)
+    if destination.exists():
+        raise AppError("Cílová složka už existuje.")
+    source.rename(destination)
+    return rel_to_data(destination)
+
+
+def delete_folder(path):
+    """Remove a library folder and all artifacts below it."""
+    target = _mutable_folder(path)
+    shutil.rmtree(target)
 
 
 def read_text(path):
@@ -63,6 +103,10 @@ def delete_file(path):
     if target is None or not target.is_file():
         raise AppError("invalid path")
     target.unlink()
+    if target.name.endswith(".summary.md"):
+        target.with_name(f"{target.name[:-len('.summary.md')]}.summary.json").unlink(missing_ok=True)
+    elif target.suffix == ".txt":
+        meeting_json_path_for(target).unlink(missing_ok=True)
 
 
 def audio_dir_for(folder):
@@ -75,6 +119,8 @@ def store_recording(source_wav, folder, filename):
     """Move a freshly captured/downloaded wav into the library. Returns its path."""
     name = sanitize_component(filename, datetime.now().strftime("%Y-%m-%d_%H-%M"))
     target_file = audio_dir_for(folder) / f"{name}.wav"
+    if target_file.exists():
+        raise AppError("cílové audio už existuje")
     source_wav.rename(target_file)
     return target_file
 
@@ -85,32 +131,110 @@ def transcript_path_for(wav_path):
     return txt_dir / f"{wav_path.stem}.txt"
 
 
+def meeting_json_path_for(txt_path):
+    """Structured segments/speakers sidecar next to a transcript."""
+    return txt_path.with_name(f"{txt_path.stem}.meeting.json")
+
+
+def read_meeting(path):
+    """Structured segments for a transcript, or ``{"segments": None}`` if absent."""
+    txt_path = resolve_in_data(path)
+    if txt_path is None or not txt_path.is_file():
+        raise AppError("invalid path")
+    meeting_path = meeting_json_path_for(txt_path)
+    if not meeting_path.is_file():
+        return {"segments": None}
+    return json.loads(meeting_path.read_text())
+
+
+def read_summary_json(path):
+    """Structured summary, with a Markdown fallback for older summaries."""
+    txt_path = resolve_in_data(path)
+    if txt_path is None or not txt_path.is_file():
+        raise AppError("invalid path")
+    summary_path = txt_path.with_name(f"{txt_path.stem}.summary.json")
+    if summary_path.is_file():
+        return json.loads(summary_path.read_text())
+    markdown_path = txt_path.with_name(f"{txt_path.stem}.summary.md")
+    if markdown_path.is_file():
+        return {"markdown": markdown_path.read_text()}
+    return None
+
+
+# ponytail: duplicates pipeline.render_text's speaker-heading logic, on dicts
+# instead of Segment dataclasses. Sharing it would mean library.py importing
+# from pipeline.py, which already imports from library.py (meeting_json_path_for)
+# -> circular import. Keep both; they're 6 lines and independently tested.
+def _render_segments_text(segments):
+    if not any(seg.get("speaker") for seg in segments):
+        return "\n".join((seg.get("text") or "").strip() for seg in segments).strip()
+    lines, last_speaker = [], None
+    for seg in segments:
+        speaker = seg.get("speaker")
+        if speaker != last_speaker:
+            lines.append(f"\n[{speaker}]")
+            last_speaker = speaker
+        lines.append((seg.get("text") or "").strip())
+    return "\n".join(lines).strip()
+
+
+def rename_speaker(path, old_name, new_name):
+    """Rename one speaker without collapsing two distinct speakers together."""
+    txt_path = resolve_in_data(path)
+    if txt_path is None or not txt_path.is_file():
+        raise AppError("invalid path")
+    meeting_path = meeting_json_path_for(txt_path)
+    if not meeting_path.is_file():
+        raise AppError("Segmenty nejsou dostupné.")
+    data = json.loads(meeting_path.read_text())
+    segments = data.get("segments") or []
+    new_name = new_name.strip()
+    if not new_name:
+        raise AppError("Jméno mluvčího nesmí být prázdné.")
+    if new_name != old_name and any(
+        seg.get("speaker") == new_name for seg in segments
+    ):
+        raise AppError(f'Mluvčí „{new_name}“ už v tomto meetingu existuje.')
+    changed = False
+    for seg in segments:
+        if seg.get("speaker") == old_name:
+            seg["speaker"] = new_name
+            changed = True
+    if not changed:
+        raise AppError("Mluvčí nenalezen.")
+    data["segments"] = segments
+    meeting_path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    txt_path.write_text(_render_segments_text(segments))
+    return {"segments": segments}
+
+
 def move_item(folder, name, to_folder, to_name, wav_path=None):
-    """Rename/move a transcript and its recording together."""
+    """Rename/move every artifact belonging to a library item together."""
+    if not valid_component(name) or not valid_component(to_name):
+        raise AppError("neplatný název")
     src_dir = DATA_DIR if not folder else resolve_in_data(folder)
-    if src_dir is None:
+    if src_dir is None or not src_dir.is_dir():
         raise AppError("invalid path")
     dst_dir = safe_target_dir(to_folder)
-    moved = []
-
-    src_txt = src_dir / f"{name}.txt"
-    if src_txt.exists():
-        dst_txt = dst_dir / f"{to_name}.txt"
-        if dst_txt.exists():
-            raise AppError("cílový přepis už existuje")
-        src_txt.rename(dst_txt)
-        moved.append("txt")
+    moves = []
+    for suffix in (".txt", ".summary.md", ".meeting.json", ".summary.json"):
+        source = src_dir / f"{name}{suffix}"
+        if source.is_file():
+            moves.append((source, dst_dir / f"{to_name}{suffix}", suffix.lstrip(".")))
 
     if wav_path:
-        src_wav = resolve_in_data(wav_path)
-        if src_wav and src_wav.exists():
-            dst_wav = dst_dir / AUDIO_SUBDIR / f"{to_name}.wav"
-            dst_wav.parent.mkdir(parents=True, exist_ok=True)
-            if dst_wav.exists():
-                raise AppError("cílové audio už existuje")
-            src_wav.rename(dst_wav)
-            moved.append("wav")
+        source = resolve_in_data(wav_path)
+        allowed_audio = {src_dir / f"{name}.wav", src_dir / AUDIO_SUBDIR / f"{name}.wav"}
+        if source not in allowed_audio or source is None or not source.is_file():
+            raise AppError("invalid path")
+        moves.append((source, dst_dir / AUDIO_SUBDIR / f"{to_name}.wav", "wav"))
 
-    if not moved:
+    if not moves:
         raise AppError("položka nenalezena")
-    return moved
+    if any(destination.exists() for _, destination, _ in moves):
+        raise AppError("cílová položka už existuje")
+    for _, destination, _ in moves:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+    for source, destination, _ in moves:
+        source.rename(destination)
+    return [kind for _, _, kind in moves]

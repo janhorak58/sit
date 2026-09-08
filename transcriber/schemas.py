@@ -3,11 +3,6 @@
 from pydantic import BaseModel
 
 
-class YoutubeReq(BaseModel):
-    url: str
-    folder: str = ""
-    filename: str = ""
-
 
 class StopReq(BaseModel):
     folder: str = ""
@@ -20,8 +15,18 @@ class TranscribeReq(BaseModel):
     num_speakers: int | None = None
 
 
+class DiarizeReq(BaseModel):
+    path: str
+    num_speakers: int | None = None
+
+
 class MkdirReq(BaseModel):
     folder: str
+
+
+class FolderRenameReq(BaseModel):
+    path: str
+    name: str
 
 
 class MoveReq(BaseModel):
@@ -43,3 +48,9 @@ class SuggestReq(BaseModel):
 class SummaryReq(BaseModel):
     path: str
     project: str = ""
+
+
+class RenameSpeakerReq(BaseModel):
+    path: str
+    old: str
+    new: str

@@ -1,0 +1,23 @@
+name: transcriber
+
+services:
+  diarizer:
+    build:
+      context: .
+    image: transcriber-diarizer:local
+    restart: unless-stopped
+    ports:
+      - "${DIARIZER_BIND:-127.0.0.1}:${DIARIZER_PORT:-8000}:8000"
+    environment:
+      HF_TOKEN: ${HF_TOKEN:?Set HF_TOKEN in diarizer/.env}
+      DIARIZE_MODEL: ${DIARIZE_MODEL:-pyannote/speaker-diarization-3.1}
+      DIARIZE_DEVICE: ${DIARIZE_DEVICE:-cuda}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-2147483648}
+      PRELOAD_MODEL: ${PRELOAD_MODEL:-1}
+    volumes:
+      - huggingface-cache:/models/huggingface
+    gpus: all
+    shm_size: "1gb"
+
+volumes:
+  huggingface-cache:
