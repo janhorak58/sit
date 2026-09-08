@@ -100,7 +100,7 @@ def remote_diarizer_status():
             "device": body.get("device"),
             "last_error": _last_remote_diarization_error,
         }
-    except (httpx.HTTPError, ValueError, KeyError) as exc:
+    except (httpx.HTTPError, ValueError, KeyError, OSError) as exc:
         return {
             "available": False,
             "backend": "local",
@@ -147,7 +147,7 @@ def label_speakers(wav_path, segments, num_speakers):
             turns, model = _remote_speaker_turns(wav_path, num_speakers)
             backend = "spark"
             _last_remote_diarization_error = None
-        except (httpx.HTTPError, ValueError, KeyError) as exc:
+        except (httpx.HTTPError, ValueError, KeyError, OSError) as exc:
             detail = getattr(getattr(exc, "response", None), "text", "")
             _last_remote_diarization_error = f"{exc} {detail}".strip()[:1000]
             log.warning(

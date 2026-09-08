@@ -48,7 +48,7 @@ def remote_status():
         response = httpx.get(f"{base}/v1/models", timeout=2.0)
         if response.is_success:
             return {"available": True, "backend": "spark", "label": "Pracovní Spark"}
-    except httpx.HTTPError:
+    except (httpx.HTTPError, OSError):
         pass
     return {"available": False, "backend": "local", "label": "Lokální model"}
 
@@ -134,7 +134,7 @@ def transcribe(wav_path, language, on_segment=lambda segment, duration: None):
     if remote_status()["available"]:
         try:
             return _remote_transcribe(wav_path, language, on_segment)
-        except (httpx.HTTPError, ValueError, KeyError, subprocess.CalledProcessError) as exc:
+        except (httpx.HTTPError, ValueError, KeyError, OSError, subprocess.CalledProcessError) as exc:
             global _last_remote_error
             detail = getattr(getattr(exc, "response", None), "text", "")
             _last_remote_error = f"{exc} {detail}".strip()[:1000]
