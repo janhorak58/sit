@@ -10,9 +10,9 @@ from ..config import (
     DIARIZE_MODEL,
     HF_TOKEN,
     INTERNAL_TOP_DIRS,
-    WHISPER_COMPUTE_TYPE,
-    WHISPER_DEVICE,
-    WHISPER_MODEL,
+    LOCAL_ASR_DEVICE,
+    LOCAL_ASR_MODEL,
+    LOCAL_ASR_QUANTIZATION,
 )
 from ..library import meeting_json_path_for, read_text
 from ..paths import rel_to_data, resolve_in_data, safe_target_dir, sanitize_component
@@ -34,9 +34,9 @@ def asr_diagnostics():
     return {
         "remote": diagnose(),
         "local": {
-            "model": WHISPER_MODEL,
-            "device": WHISPER_DEVICE,
-            "compute_type": WHISPER_COMPUTE_TYPE,
+            "model": LOCAL_ASR_MODEL,
+            "device": LOCAL_ASR_DEVICE,
+            "compute_type": LOCAL_ASR_QUANTIZATION or "float32",
         },
         "diarization": {
             "remote": remote_diarizer_status(),
@@ -62,7 +62,7 @@ def projects():
 def suggest_folder(req: SuggestReq):
     project = sanitize_component(req.project, "")
     if not project:
-        raise AppError("Nejdřív vyber projekt.")
+        raise AppError("Select a project first.")
     # Preserve the user's existing convention: project is the top-level folder.
     return {"folder": project}
 
@@ -71,7 +71,7 @@ def suggest_folder(req: SuggestReq):
 def create_summary(req: SummaryReq):
     transcript = resolve_in_data(req.path)
     if transcript is None or not transcript.is_file() or transcript.suffix != ".txt":
-        raise AppError("Přepis nenalezen.")
+        raise AppError("Transcript not found.")
     text = read_text(req.path)
     segments = None
     meeting_json = meeting_json_path_for(transcript)

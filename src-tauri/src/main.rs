@@ -83,7 +83,7 @@ fn backend_paths() -> Result<(PathBuf, PathBuf), String> {
         });
     if !project.is_absolute() || !project.join("transcriber/__main__.py").is_file() {
         return Err(
-            "Set TRANSCRIBER_PROJECT_DIR to the absolute path of a ŠIT source checkout.".into(),
+            "Set TRANSCRIBER_PROJECT_DIR to the absolute path of a SHIT source checkout.".into(),
         );
     }
     let python = env::var_os("TRANSCRIBER_PYTHON")
@@ -100,7 +100,7 @@ fn backend_paths() -> Result<(PathBuf, PathBuf), String> {
 
 fn start_backend() -> Result<Option<OwnedBackend>, String> {
     if backend_ready(BACKEND_ADDR) {
-        eprintln!("ŠIT: reusing backend at {BACKEND_ADDR}");
+        eprintln!("SHIT: reusing backend at {BACKEND_ADDR}");
         return Ok(None);
     }
     // Keep compatibility with existing Linux installations, but never require
@@ -137,7 +137,7 @@ fn start_backend() -> Result<Option<OwnedBackend>, String> {
     }
     let (project, python) = backend_paths()?;
     eprintln!(
-        "ŠIT: starting {} -m transcriber in {}",
+        "SHIT: starting {} -m transcriber in {}",
         python.display(),
         project.display()
     );
@@ -176,7 +176,7 @@ fn run() -> Result<(), String> {
         .map_err(|err| {
             format!("Cannot open desktop window (requires a graphical session / WSLg): {err}")
         })?;
-    eprintln!("ŠIT: desktop window ready");
+    eprintln!("SHIT: desktop window ready");
     app.run(move |_handle, event| {
         if matches!(event, tauri::RunEvent::Exit) {
             drop(backend.take());
@@ -187,7 +187,7 @@ fn run() -> Result<(), String> {
 
 fn main() {
     if let Err(error) = run() {
-        eprintln!("ŠIT: {error}");
+        eprintln!("SHIT: {error}");
         std::process::exit(1);
     }
 }

@@ -1,13 +1,13 @@
 {
-  "name": "ŠIT — ŠIKOVNÝ INTERAKTIVNÍ TRANSKRIPTOR",
-  "short_name": "ŠIT",
-  "description": "ŠIKOVNÝ INTERAKTIVNÍ TRANSKRIPTOR — nahrávky, přepisy a souhrny na jednom místě.",
+  "name": "SHIT — Super-helpful interactive transcriber",
+  "short_name": "SHIT",
+  "description": "Super-helpful interactive transcriber — recordings, transcripts, and summaries in one place.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#f1f2ed",
-  "theme_color": "#102d25",
-  "lang": "cs",
+  "background_color": "#f4f1ec",
+  "theme_color": "#241a15",
+  "lang": "en",
   "icons": [
     {
       "src": "/static/icons/icon-192.png",

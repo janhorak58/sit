@@ -18,23 +18,23 @@ export function watchProgress(onDone) {
       const progress = await api.getProgress();
       if (progress.error) throw new Error(progress.error);
       $('fill').style.width = (progress.percent || 0) + '%';
-      status(progress.message || 'Přepisuji…');
+      status(progress.message || 'Transcribing…');
       if (progress.stage === 'done') {
         setBusy(false);
-        if (progress.warning) status('Upozornění: ' + progress.warning);
+        if (progress.warning) status('Warning: ' + progress.warning);
         window.dispatchEvent(new CustomEvent('transcriber:transcribe-done', {detail: progress}));
         if (onDone) onDone(progress);
         return;
       }
       if (progress.stage === 'error') {
         setBusy(false);
-        status('Chyba: ' + progress.error);
+        status('Error: ' + progress.error);
         return;
       }
       pollTimer = setTimeout(poll, POLL_MS);
     } catch (error) {
       setBusy(false);
-      status('Chyba: ' + error.message);
+      status('Error: ' + error.message);
     }
   };
   poll();
@@ -49,7 +49,7 @@ export async function transcribePath(path, onDone) {
     watchProgress(onDone);
   } catch (error) {
     setBusy(false);
-    status('Chyba: ' + error.message);
+    status('Error: ' + error.message);
   }
 }
 

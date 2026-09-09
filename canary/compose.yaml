@@ -1,0 +1,30 @@
+# Separate project from diarizer/: same-named projects treat each other's
+# containers as orphans.
+name: transcriber-canary
+
+services:
+  canary:
+    build:
+      context: .
+    image: transcriber-canary:local
+    restart: unless-stopped
+    ports:
+      - "${CANARY_BIND:-127.0.0.1}:${CANARY_PORT:-8208}:8000"
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      CANARY_MODEL: ${CANARY_MODEL:-nemo-canary-1b-v2}
+      CANARY_DEVICE: ${CANARY_DEVICE:-cuda}
+      CANARY_QUANTIZATION: ${CANARY_QUANTIZATION:-}
+      CANARY_VAD_MODEL: ${CANARY_VAD_MODEL:-silero}
+      CANARY_WINDOW_SECONDS: ${CANARY_WINDOW_SECONDS:-30}
+      CANARY_BATCH_SIZE: ${CANARY_BATCH_SIZE:-8}
+      CANARY_DEFAULT_LANGUAGE: ${CANARY_DEFAULT_LANGUAGE:-cs}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-2147483648}
+      PRELOAD_MODEL: ${PRELOAD_MODEL:-1}
+    volumes:
+      - huggingface-cache:/models/huggingface
+    gpus: all
+    shm_size: "1gb"
+
+volumes:
+  huggingface-cache:

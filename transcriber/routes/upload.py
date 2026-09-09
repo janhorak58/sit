@@ -29,13 +29,13 @@ async def upload(request: Request, folder: str = "", filename: str = "", ext: st
             size += fh.write(chunk)
     if not size:
         src.unlink(missing_ok=True)
-        raise AppError("Prázdný soubor.")
+        raise AppError("Empty file.")
     proc = subprocess.run(
         ["ffmpeg", "-y", "-i", str(src), "-vn", "-ar", SAMPLE_RATE, "-ac", "1", str(WAV_PATH)],
         capture_output=True, text=True,
     )
     src.unlink(missing_ok=True)
     if proc.returncode != 0 or not WAV_PATH.exists():
-        raise AppError((proc.stderr or "")[-2000:] or "konverze selhala")
+        raise AppError((proc.stderr or "")[-2000:] or "conversion failed")
     target = store_recording(WAV_PATH, folder, filename)
     return {"ok": True, "path": rel_to_data(target)}

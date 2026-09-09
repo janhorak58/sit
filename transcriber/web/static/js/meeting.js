@@ -22,10 +22,10 @@ function seekTo(audio, seconds) {
 }
 
 async function renameSpeaker(path, oldName, audio) {
-  const name = prompt('Nové jméno pro ' + oldName + ':', oldName);
+  const name = prompt('New name for ' + oldName + ':', oldName);
   if (!name || name === oldName) return;
   const j = await api.renameSpeaker(path, oldName, name);
-  if (j.error) { alert('Chyba: ' + j.error); return; }
+  if (j.error) { alert('Error: ' + j.error); return; }
   renderTranscript(path, j.segments, audio);
 }
 
@@ -58,7 +58,7 @@ function renderTranscript(path, segments, audio) {
   wrap.replaceChildren();
   segRows = [];
   if (!segments || !segments.length) {
-    wrap.appendChild(el('div', {className: 'empty', textContent: 'Bez segmentů (starší přepis).'}));
+    wrap.appendChild(el('div', {className: 'empty', textContent: 'No segments (older transcript).'}));
     return;
   }
   groupSegments(segments).forEach(seg => {
@@ -66,7 +66,7 @@ function renderTranscript(path, segments, audio) {
     time.onclick = () => seekTo(audio, seg.start);
     const rowChildren = [time];
     if (seg.speaker) {
-      const speaker = el('button', {className: 'segspeaker', textContent: seg.speaker, title: 'Přejmenovat mluvčího'});
+      const speaker = el('button', {className: 'segspeaker', textContent: seg.speaker, title: 'Rename speaker'});
       speaker.onclick = e => { e.stopPropagation(); renameSpeaker(path, seg.speaker, audio); };
       rowChildren.push(speaker);
     }
@@ -90,7 +90,7 @@ function renderSummary(data) {
   const wrap = $('meeting-summary');
   wrap.replaceChildren();
   if (!data || !data.markdown && !data.summary && !(data.decisions || []).length && !(data.action_items || []).length && !(data.open_questions || []).length) {
-    wrap.appendChild(el('div', {className: 'empty', textContent: 'Souhrn zatím nevytvořen.'}));
+    wrap.appendChild(el('div', {className: 'empty', textContent: 'No summary yet.'}));
     return;
   }
   if (data.markdown) {
@@ -98,12 +98,12 @@ function renderSummary(data) {
     return;
   }
   if (data.summary) wrap.appendChild(el('p', {className: 'meeting-summary-text', textContent: data.summary}));
-  summarySection(wrap, 'Rozhodnutí', data.decisions, d => el('div', {className: 'meeting-item', textContent: d.text}));
-  summarySection(wrap, 'Úkoly', data.action_items, a => el('div', {
+  summarySection(wrap, 'Decisions', data.decisions, d => el('div', {className: 'meeting-item', textContent: d.text}));
+  summarySection(wrap, 'Tasks', data.action_items, a => el('div', {
     className: 'meeting-item',
     textContent: a.text + (a.owner ? ' — ' + a.owner : '') + (a.deadline ? ' (' + a.deadline + ')' : ''),
   }));
-  summarySection(wrap, 'Otevřené otázky', data.open_questions, q => el('div', {className: 'meeting-item', textContent: q.text}));
+  summarySection(wrap, 'Open questions', data.open_questions, q => el('div', {className: 'meeting-item', textContent: q.text}));
 }
 
 function highlightActive(audio) {
@@ -121,13 +121,13 @@ function renderMeta(meeting) {
   const asr = meeting.asr || {};
   const diar = meeting.diarization || {};
   const parts = [];
-  const where = asr.where || (meeting.backend === 'spark' ? 'Pracovní Spark' : meeting.backend ? 'Lokálně' : null);
-  if (where) parts.push('Přepis: ' + where + (asr.model ? ' — ' + asr.model : '') + (asr.device ? ' (' + asr.device + ')' : ''));
-  if (diar.applied) parts.push('Mluvčí: ' + (diar.model || 'rozpoznáni'));
-  else if (diar.applied === false) parts.push('Mluvčí: nerozpoznáni');
-  if (meeting.language) parts.push('Jazyk: ' + meeting.language);
-  if (meeting.duration) parts.push('Délka: ' + Math.round(meeting.duration / 60) + ' min');
-  if (meeting.created_at) parts.push(new Date(meeting.created_at).toLocaleString('cs-CZ'));
+  const where = asr.where || (meeting.backend === 'spark' ? 'Remote Spark' : meeting.backend ? 'Locally' : null);
+  if (where) parts.push('Transcription: ' + where + (asr.model ? ' — ' + asr.model : '') + (asr.device ? ' (' + asr.device + ')' : ''));
+  if (diar.applied) parts.push('Speakers: ' + (diar.model || 'recognized'));
+  else if (diar.applied === false) parts.push('Speakers: not recognized');
+  if (meeting.language) parts.push('Language: ' + meeting.language);
+  if (meeting.duration) parts.push('Duration: ' + Math.round(meeting.duration / 60) + ' min');
+  if (meeting.created_at) parts.push(new Date(meeting.created_at).toLocaleString('en-US'));
   $('meeting-meta').textContent = parts.join(' · ');
   $('meeting-meta').title = diar.note || '';
 }
@@ -149,7 +149,7 @@ export async function openMeeting(path, wavPath, title) {
     openRecordingWorkspace(wavPath, title, true);
   };
   editMode.disabled = !wavPath;
-  editMode.title = wavPath ? 'Otevřít nástroje pro přepis a souhrn' : 'Úpravy vyžadují původní nahrávku';
+  editMode.title = wavPath ? 'Open transcription and summary tools' : 'Editing requires the original recording';
   $('meeting-rename').onclick = () => {
     const folder = folderFor(path);
     window.dispatchEvent(new CustomEvent('transcriber:rename-meeting', {

@@ -19,7 +19,7 @@ async function get(url) {
   return body(await fetch(url));
 }
 
-export const startRecording = () => post('/start');
+export const startRecording = (language, live) => post('/start', {language, live});
 export const recordingStatus = () => get('/recording/status');
 export const stopRecording = (folder, filename) => post('/stop', {folder, filename});
 export const cancelRecording = () => post('/recording/cancel');

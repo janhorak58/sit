@@ -54,7 +54,7 @@ def rename_speaker(req: RenameSpeakerReq):
 def audio(path: str):
     target = resolve_in_data(path)
     if target is None or not target.is_file():
-        raise AppError("Nahrávka nenalezena.")
+        raise AppError("Recording not found.")
     return FileResponse(target, media_type="audio/wav")
 
 

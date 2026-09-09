@@ -1,6 +1,6 @@
 fastapi
 uvicorn[standard]
-faster-whisper
+onnx-asr
 pyannote.audio
 httpx
 python-dotenv

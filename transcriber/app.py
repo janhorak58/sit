@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
 
 def create_app():
     ensure_dirs()
-    app = FastAPI(title="ŠIT — ŠIKOVNÝ INTERAKTIVNÍ TRANSKRIPTOR", lifespan=lifespan)
+    app = FastAPI(title="SHIT — Super-helpful interactive transcriber", lifespan=lifespan)
 
     @app.exception_handler(AppError)
     def _app_error(request: Request, exc: AppError):

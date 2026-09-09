@@ -66,21 +66,21 @@ def make_dir(folder):
 def _mutable_folder(path):
     target = resolve_in_data(path)
     if target is None or not target.is_dir() or target.resolve() == DATA_DIR.resolve():
-        raise AppError("Složka nenalezena.")
+        raise AppError("Folder not found.")
     relative = target.resolve().relative_to(DATA_DIR.resolve())
     if relative.parts[0] in INTERNAL_TOP_DIRS or relative.parts[0].startswith("."):
-        raise AppError("Tuto složku nelze změnit.")
+        raise AppError("This folder cannot be changed.")
     return target
 
 
 def rename_folder(path, new_name):
     """Rename one library folder without moving it outside its parent."""
     if not valid_component(new_name):
-        raise AppError("Neplatný název složky.")
+        raise AppError("Invalid folder name.")
     source = _mutable_folder(path)
     destination = source.with_name(new_name)
     if destination.exists():
-        raise AppError("Cílová složka už existuje.")
+        raise AppError("Destination folder already exists.")
     source.rename(destination)
     return rel_to_data(destination)
 
@@ -120,7 +120,7 @@ def store_recording(source_wav, folder, filename):
     name = sanitize_component(filename, datetime.now().strftime("%Y-%m-%d_%H-%M"))
     target_file = audio_dir_for(folder) / f"{name}.wav"
     if target_file.exists():
-        raise AppError("cílové audio už existuje")
+        raise AppError("target audio already exists")
     source_wav.rename(target_file)
     return target_file
 
@@ -185,23 +185,23 @@ def rename_speaker(path, old_name, new_name):
         raise AppError("invalid path")
     meeting_path = meeting_json_path_for(txt_path)
     if not meeting_path.is_file():
-        raise AppError("Segmenty nejsou dostupné.")
+        raise AppError("Segments are not available.")
     data = json.loads(meeting_path.read_text())
     segments = data.get("segments") or []
     new_name = new_name.strip()
     if not new_name:
-        raise AppError("Jméno mluvčího nesmí být prázdné.")
+        raise AppError("Speaker name must not be empty.")
     if new_name != old_name and any(
         seg.get("speaker") == new_name for seg in segments
     ):
-        raise AppError(f'Mluvčí „{new_name}“ už v tomto meetingu existuje.')
+        raise AppError(f'Speaker "{new_name}" already exists in this meeting.')
     changed = False
     for seg in segments:
         if seg.get("speaker") == old_name:
             seg["speaker"] = new_name
             changed = True
     if not changed:
-        raise AppError("Mluvčí nenalezen.")
+        raise AppError("Speaker not found.")
     data["segments"] = segments
     meeting_path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
     txt_path.write_text(_render_segments_text(segments))
@@ -211,7 +211,7 @@ def rename_speaker(path, old_name, new_name):
 def move_item(folder, name, to_folder, to_name, wav_path=None):
     """Rename/move every artifact belonging to a library item together."""
     if not valid_component(name) or not valid_component(to_name):
-        raise AppError("neplatný název")
+        raise AppError("invalid name")
     src_dir = DATA_DIR if not folder else resolve_in_data(folder)
     if src_dir is None or not src_dir.is_dir():
         raise AppError("invalid path")
@@ -230,9 +230,9 @@ def move_item(folder, name, to_folder, to_name, wav_path=None):
         moves.append((source, dst_dir / AUDIO_SUBDIR / f"{to_name}.wav", "wav"))
 
     if not moves:
-        raise AppError("položka nenalezena")
+        raise AppError("item not found")
     if any(destination.exists() for _, destination, _ in moves):
-        raise AppError("cílová položka už existuje")
+        raise AppError("destination item already exists")
     for _, destination, _ in moves:
         destination.parent.mkdir(parents=True, exist_ok=True)
     for source, destination, _ in moves:

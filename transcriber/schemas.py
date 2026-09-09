@@ -4,6 +4,11 @@ from pydantic import BaseModel
 
 
 
+class StartReq(BaseModel):
+    language: str = "cs"
+    live: bool = True
+
+
 class StopReq(BaseModel):
     folder: str = ""
     filename: str = ""

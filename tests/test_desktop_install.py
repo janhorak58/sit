@@ -13,8 +13,8 @@ INSTALLER = Path(__file__).resolve().parents[1] / "scripts" / "install-desktop.p
 
 
 def prepare_install(tmp_path):
-    checkout = tmp_path / 'checkout ŠIT \' "$`\\ %f'
-    home = tmp_path / 'home ŠIT \' "$`\\ %f'
+    checkout = tmp_path / 'checkout SHIT \' "$`\\ %f'
+    home = tmp_path / 'home SHIT \' "$`\\ %f'
     script = checkout / "scripts" / "install-desktop.py"
     script.parent.mkdir(parents=True)
     shutil.copyfile(INSTALLER, script)
@@ -40,7 +40,7 @@ def prepare_install(tmp_path):
 def test_desktop_entry_launches_with_literal_special_characters(tmp_path):
     checkout, home, capture, env, command = prepare_install(tmp_path)
     subprocess.run(command, env=env, cwd="/", check=True, capture_output=True)
-    entry = home / "data" / "applications" / "sit.desktop"
+    entry = home / "data" / "applications" / "shit.desktop"
     subprocess.run(["gio", "launch", str(entry)], env=env, cwd="/", check=True, capture_output=True)
     deadline = time.monotonic() + 5
     while not capture.exists() and time.monotonic() < deadline:
@@ -48,15 +48,15 @@ def test_desktop_entry_launches_with_literal_special_characters(tmp_path):
     assert capture.read_text().splitlines() == [str(checkout), str(checkout / ".venv/bin/python")]
     subprocess.run(command + ["--uninstall"], env=env, check=True, capture_output=True)
     assert not entry.exists()
-    assert not (home / ".local/bin/sit").exists()
-    assert not (home / "data/icons/sit.png").exists()
+    assert not (home / ".local/bin/shit").exists()
+    assert not (home / "data/icons/shit.png").exists()
     assert checkout.exists()
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="Linux installer")
 def test_installer_refuses_to_overwrite_or_uninstall_unrelated_launcher(tmp_path):
     _, home, _, env, command = prepare_install(tmp_path)
-    target = home / ".local/bin/sit"
+    target = home / ".local/bin/shit"
     target.parent.mkdir(parents=True)
     unrelated = tmp_path / "unrelated"
     unrelated.write_text("user data")
@@ -65,7 +65,7 @@ def test_installer_refuses_to_overwrite_or_uninstall_unrelated_launcher(tmp_path
     assert result.returncode != 0
     assert target.is_symlink()
     assert unrelated.read_text() == "user data"
-    assert not (home / "data/applications/sit.desktop").exists()
+    assert not (home / "data/applications/shit.desktop").exists()
     result = subprocess.run(command + ["--uninstall"], env=env, capture_output=True)
     assert result.returncode != 0
     assert target.is_symlink()

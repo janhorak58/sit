@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Per-user desktop integration for the SIT (transcriber) desktop app.
+"""Per-user desktop integration for the SHIT (transcriber) desktop app.
 
 Installs, for the current user only (no sudo, no package manager calls):
 
-  - a launcher script at   ~/.local/bin/sit
-  - a desktop entry at     ~/.local/share/applications/sit.desktop
-  - an app icon at         ~/.local/share/icons/sit.png
+  - a launcher script at   ~/.local/bin/shit
+  - a desktop entry at     ~/.local/share/applications/shit.desktop
+  - an app icon at         ~/.local/share/icons/shit.png
 
 The launcher does not copy the Tauri binary anywhere: it points straight at
 the prebuilt binary inside this source checkout
@@ -41,7 +41,7 @@ VENV_PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
 DESKTOP_BINARY = REPO_ROOT / "src-tauri" / "target" / "release" / "transcriber-desktop"
 ICON_SOURCE = REPO_ROOT / "src-tauri" / "icons" / "icon.png"
 
-APP_ID = "sit"
+APP_ID = "shit"
 XDG_DATA_HOME = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
 if not XDG_DATA_HOME.is_absolute():
     XDG_DATA_HOME = Path.home() / ".local" / "share"
@@ -50,24 +50,24 @@ LAUNCHER_PATH = Path.home() / ".local" / "bin" / APP_ID
 DESKTOP_ENTRY_PATH = XDG_DATA_HOME / "applications" / f"{APP_ID}.desktop"
 ICON_PATH = XDG_DATA_HOME / "icons" / f"{APP_ID}.png"
 
-COMMENT_CS = (
-    "Lokální nástroj pro přepis a souhrn schůzek s rozpoznáváním mluvčích"
+COMMENT = (
+    "Local tool for meeting transcription and summaries with speaker recognition"
 )
 
 
 def check_supported_platform() -> None:
     if sys.platform != "linux":
         raise SystemExit(
-            f"Nepodporovaná platforma: {sys.platform}. Tento instalátor podporuje "
-            "pouze Linux (Arch, Ubuntu/Debian) a WSL2 s WSLg na Windows 11 - "
-            "nativní Windows ani macOS build tohoto projektu neexistuje."
+            f"Unsupported platform: {sys.platform}. This installer only supports "
+            "Linux (Arch, Ubuntu/Debian) and WSL2 with WSLg on Windows 11 - "
+            "there is no native Windows or macOS build of this project."
         )
     release = platform.uname().release.lower()
     if "microsoft" in release:
         print(
-            "Detekováno WSL2. Pro zobrazení okna a přehrávání zvuku potřebuješ "
-            "WSLg (součást aktuálního Windows 11 + `wsl --update`). Nahrávání "
-            "systémového zvuku z Windows přes WSLg není zaručené - viz README."
+            "Detected WSL2. Showing the window and playing audio needs WSLg "
+            "(bundled with current Windows 11 + `wsl --update`). Capturing "
+            "Windows system audio through WSLg is not guaranteed - see README."
         )
 
 
@@ -91,24 +91,24 @@ def check_prerequisites() -> None:
     problems = []
     if not (VENV_PYTHON.is_file() and os.access(VENV_PYTHON, os.X_OK)):
         problems.append(
-            f"Chybí virtuální prostředí: {VENV_PYTHON}\n"
-            "  Vytvoř ho příkazy (viz README.md):\n"
+            f"Missing virtual environment: {VENV_PYTHON}\n"
+            "  Create it with (see README.md):\n"
             f"    cd {REPO_ROOT}\n"
             "    python3 -m venv .venv\n"
             "    .venv/bin/pip install -r requirements.txt"
         )
     if not (DESKTOP_BINARY.is_file() and os.access(DESKTOP_BINARY, os.X_OK)):
         problems.append(
-            f"Chybí sestavený desktopový shell: {DESKTOP_BINARY}\n"
-            "  Sestav ho příkazy (viz README.md):\n"
+            f"Missing built desktop shell: {DESKTOP_BINARY}\n"
+            "  Build it with (see README.md):\n"
             f"    cd {REPO_ROOT / 'src-tauri'}\n"
             "    cargo build --release"
         )
     if not ICON_SOURCE.exists():
-        problems.append(f"Chybí ikona: {ICON_SOURCE}")
+        problems.append(f"Missing icon: {ICON_SOURCE}")
     if problems:
         raise SystemExit(
-            "Instalaci nelze dokončit, chybí předpoklady:\n\n"
+            "Cannot finish installation, missing prerequisites:\n\n"
             + "\n\n".join(problems)
         )
 
@@ -126,14 +126,14 @@ def write_launcher() -> None:
     )
     LAUNCHER_PATH.write_text(script, encoding="utf-8")
     LAUNCHER_PATH.chmod(0o755)
-    print(f"{'Přepsán' if existed else 'Vytvořen'} launcher: {LAUNCHER_PATH}")
+    print(f"{'Overwrote' if existed else 'Created'} launcher: {LAUNCHER_PATH}")
 
 
 def write_icon() -> None:
     ICON_PATH.parent.mkdir(parents=True, exist_ok=True)
     existed = ICON_PATH.exists()
     shutil.copyfile(ICON_SOURCE, ICON_PATH)
-    print(f"{'Přepsána' if existed else 'Nainstalována'} ikona: {ICON_PATH}")
+    print(f"{'Overwrote' if existed else 'Installed'} icon: {ICON_PATH}")
 
 
 def write_desktop_entry() -> None:
@@ -143,17 +143,17 @@ def write_desktop_entry() -> None:
         "[Desktop Entry]\n"
         "Type=Application\n"
         "Version=1.0\n"
-        "Name=ŠIT\n"
-        "GenericName=Transkriptor schůzek\n"
-        f"Comment={COMMENT_CS}\n"
+        "Name=SHIT\n"
+        "GenericName=Meeting Transcriber\n"
+        f"Comment={COMMENT}\n"
         f"Exec=/bin/sh {desktop_exec_quote(str(LAUNCHER_PATH))}\n"
         f"Icon={desktop_value(str(ICON_PATH))}\n"
         "Terminal=false\n"
         "Categories=AudioVideo;Audio;\n"
-        "X-SIT-Managed=true\n"
+        "X-SHIT-Managed=true\n"
     )
     DESKTOP_ENTRY_PATH.write_text(entry, encoding="utf-8")
-    print(f"{'Přepsán' if existed else 'Vytvořen'} desktop soubor: {DESKTOP_ENTRY_PATH}")
+    print(f"{'Overwrote' if existed else 'Created'} desktop entry: {DESKTOP_ENTRY_PATH}")
     update_db = shutil.which("update-desktop-database")
     if update_db:
         import subprocess
@@ -167,21 +167,22 @@ def check_managed_paths() -> None:
     """Never replace or remove an unrelated file or follow an output symlink."""
     for path in (LAUNCHER_PATH, DESKTOP_ENTRY_PATH, ICON_PATH):
         if path.is_symlink():
-            raise SystemExit(f"Odmítám změnit symbolický odkaz: {path}")
+            raise SystemExit(f"Refusing to change a symbolic link: {path}")
         if not path.exists():
             continue
         if not path.is_file():
-            raise SystemExit(f"Cíl není soubor: {path}")
+            raise SystemExit(f"Target is not a file: {path}")
         if path == ICON_PATH:
             managed = ICON_SOURCE.is_file() and path.read_bytes() == ICON_SOURCE.read_bytes()
         else:
             marker = (
                 "# Generated by scripts/install-desktop.py - safe to regenerate, do not"
-                if path == LAUNCHER_PATH else "X-SIT-Managed=true"
+                if path == LAUNCHER_PATH else "X-SHIT-Managed=true"
             )
             managed = marker in path.read_text(encoding="utf-8", errors="replace").splitlines()
         if not managed:
-            raise SystemExit(f"Cíl nepatří instalátoru ŠIT; ponechávám beze změny: {path}")
+            raise SystemExit(f"Target does not belong to the SHIT installer; leaving unchanged: {path}")
+
 
 def install() -> None:
     check_supported_platform()
@@ -191,10 +192,10 @@ def install() -> None:
     write_icon()
     write_desktop_entry()
     print()
-    print("Hotovo. Aplikaci najdeš v nabídce aplikací jako „ŠIT“, nebo ji spustíš přímo:")
+    print('Done. Find the app in your application menu as "SHIT", or launch it directly:')
     print(f"  {LAUNCHER_PATH}")
     print()
-    print("Odinstalace: python3 scripts/install-desktop.py --uninstall")
+    print("Uninstall: python3 scripts/install-desktop.py --uninstall")
 
 
 def uninstall() -> None:
@@ -206,24 +207,24 @@ def uninstall() -> None:
             path.unlink()
             removed.append(path)
     if removed:
-        print("Odstraněno:")
+        print("Removed:")
         for path in removed:
             print(f"  {path}")
     else:
-        print("Nic k odstranění - žádný z instalovaných souborů neexistuje.")
+        print("Nothing to remove - none of the installed files exist.")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Per-user instalace desktopové zástupky pro ŠIT (bez sudo, bez "
-            "zásahu do systémových adresářů)."
+            "Per-user desktop integration install for SHIT (no sudo, no "
+            "system directory changes)."
         )
     )
     parser.add_argument(
         "--uninstall",
         action="store_true",
-        help=f"odstranit {LAUNCHER_PATH}, {DESKTOP_ENTRY_PATH} a {ICON_PATH}",
+        help=f"remove {LAUNCHER_PATH}, {DESKTOP_ENTRY_PATH}, and {ICON_PATH}",
     )
     args = parser.parse_args()
     if args.uninstall:

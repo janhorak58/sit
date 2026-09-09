@@ -12,10 +12,37 @@ def test_asr_falls_back_to_local_when_remote_transcription_fails(monkeypatch, tm
     wav = tmp_path / "meeting.wav"
     wav.write_bytes(b"RIFF")
     monkeypatch.setattr(asr, "remote_status", lambda: {"available": True})
-    monkeypatch.setattr(asr, "_remote_transcribe", lambda *args: (_ for _ in ()).throw(httpx.ConnectError("down")))
+    monkeypatch.setattr(asr, "_remote_transcribe", lambda *args, **kwargs: (_ for _ in ()).throw(httpx.ConnectError("down")))
     expected = asr.Transcript([asr.Segment(0, 1, "hello")], 1, "local")
     monkeypatch.setattr(asr, "_local_transcribe", lambda *args: expected)
     assert asr.transcribe(wav, "en").backend == "local"
+
+
+def test_local_transcription_always_pins_a_language(monkeypatch, tmp_path):
+    """Auto-detection drifts per VAD window: Czech audio came back part Slovak,
+    part English. The language must reach the model on every local pass."""
+    import wave
+
+    wav = tmp_path / "meeting.wav"
+    with wave.open(str(wav), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(16000)
+        handle.writeframes(b"\x00\x01" * 16000)
+    seen = []
+
+    class Model:
+        def recognize(self, path, **kwargs):
+            seen.append(kwargs)
+            return iter([SimpleNamespace(start=0.0, end=1.0, text="ahoj")])
+
+    monkeypatch.setattr(asr, "get_local_asr", lambda: Model())
+
+    assert asr._local_transcribe(wav, "cs", lambda *_: None).duration == 1.0
+    asr._local_transcribe(wav, None, lambda *_: None)
+
+    assert [kwargs["language"] for kwargs in seen] == ["cs", asr.LOCAL_ASR_DEFAULT_LANGUAGE]
+    assert all(kwargs["pnc"] is True for kwargs in seen)
 
 
 def test_summarize_returns_structured_data_with_evidence_timestamps(monkeypatch):
@@ -315,7 +342,7 @@ def test_run_pipeline_falls_back_when_diarization_is_unavailable(monkeypatch, tm
 
     state = pipeline_module.progress.snapshot()
     assert state["stage"] == "done"
-    assert "Rozpoznání mluvčích se nezdařilo" in state["warning"]
+    assert "Speaker recognition failed" in state["warning"]
     assert txt_path.read_text() == "hello"
     data = json.loads(pipeline_module.meeting_json_path_for(txt_path).read_text())
     assert data["segments"] == [{"start": 0, "end": 1, "text": "hello", "speaker": None}]
@@ -357,7 +384,7 @@ def test_rerun_diarization_relabels_existing_segments_without_asr(monkeypatch, t
     assert result["asr"] == {"backend": "spark", "model": "whisper-large"}
     assert result["segments"][0]["speaker"] == "Eva"
     assert result["diarization"]["applied"] is True
-    assert pipeline_module.progress.snapshot()["message"] == "Mluvčí byli rozpoznáni na Sparku."
+    assert pipeline_module.progress.snapshot()["message"] == "Speakers were recognized on Spark."
 
 
 def test_label_speakers_prefers_spark_diarizer(monkeypatch, tmp_path):
@@ -555,7 +582,7 @@ def test_rename_speaker_rejects_name_already_used_in_meeting(monkeypatch, tmp_pa
     try:
         library.rename_speaker("meeting.txt", "Eva", "Jan")
     except AppError as exc:
-        assert "už v tomto meetingu existuje" in str(exc)
+        assert "already exists in this meeting" in str(exc)
     else:
         raise AssertionError("duplicate speaker name was accepted")
     assert (tmp_path / "meeting.txt").read_text() == "unchanged"
@@ -662,7 +689,7 @@ def test_remote_transcription_stitches_chunk_timestamps(monkeypatch, tmp_path):
         {"duration": 900.0, "segments": [{"start": 0, "end": 5, "text": "první"}]},
         {"duration": 300.0, "segments": [{"start": 10, "end": 15, "text": "druhý"}]},
     ])
-    monkeypatch.setattr(asr, "_post_audio", lambda path, lang: (
+    monkeypatch.setattr(asr, "_post_audio", lambda path, lang, **kwargs: (
         [asr.Segment(float(s["start"]), float(s["end"]), s["text"]) for s in next(bodies)["segments"]],
         900.0 if path.name == "a.mp3" else 300.0,
     ))
@@ -700,8 +727,8 @@ def test_meeting_json_records_engine_provenance(monkeypatch, tmp_path):
 
     meta = json.loads((tmp_path / "m.meeting.json").read_text())
     assert meta["asr"] == {
-        "backend": "local", "where": "Lokálně",
-        "model": pipeline.WHISPER_MODEL, "device": pipeline.WHISPER_DEVICE,
+        "backend": "local", "where": "Locally",
+        "model": pipeline.LOCAL_ASR_MODEL, "device": pipeline.LOCAL_ASR_DEVICE,
     }
     assert meta["diarization"]["applied"] is False
     assert meta["duration"] == 3.0 and meta["created_at"]

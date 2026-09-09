@@ -1,69 +1,99 @@
-# ŠIT — ŠIKOVNÝ INTERAKTIVNÍ TRANSKRIPTOR
+# SHIT — Super-helpful interactive transcriber
 
-Nahrávky, přepisy s rozlišením mluvčích a souhrny na jednom místě. ŠIT přijímá
-audio/video soubory a na podporovaném linuxovém zvukovém serveru nahrává mikrofon
-společně se systémovým zvukem.
+Recordings, speaker-labeled transcripts, and summaries in one place. SHIT accepts
+audio/video files, and on a supported Linux audio server it records the
+microphone together with system audio.
 
-FastAPI backend lze otevřít v prohlížeči nebo v nativním okně Tauri. Přepis používá
-nakonfigurovaný privátní ASR server, při jeho nedostupnosti lokální faster-whisper.
-Rozpoznání mluvčích obdobně používá vzdálený nebo lokální pyannote. Souhrny vyžadují
-samostatný OpenAI-kompatibilní server; lokální fallback pro souhrny není zabudovaný.
-Audio se při použití vzdáleného ASR/diarizace odesílá příslušnému serveru, přepis
-při generování souhrnu souhrnnému serveru. Pro čistě lokální ASR nastav
-`SPARK_WHISPER_URL=` a `SPARK_DIARIZER_URL=`.
+The FastAPI backend can be opened in a browser or in a native Tauri window.
+Transcription uses a configured private ASR server, falling back to local
+Canary when it is unavailable. Speaker recognition similarly uses remote or
+local pyannote. Summaries require a separate OpenAI-compatible server; there
+is no built-in local fallback for summaries. When using remote ASR/diarization,
+audio is sent to that server; the transcript is sent to the summary server when
+generating a summary. For purely local ASR, set `SPARK_WHISPER_URL=` and
+`SPARK_DIARIZER_URL=`.
 
-## Platformy
+## Live transcription while recording
 
-| Prostředí | Stav |
+Before recording, pick a language and optionally turn off the **Live
+transcription while recording** toggle — turning it off saves compute (the
+model does not run continuously); the final saved transcript after stopping is
+unaffected either way. The live preview starts after roughly two seconds of
+captured audio plus the model's processing time; further updates arrive every
+two seconds of new audio. It uses up to eight seconds of context for speech
+continuity. First model load and slower hardware can extend the wait.
+While recording, the input cards and toggle are hidden and replaced by a large
+timed transcript with recording controls (if live transcription is on). The
+newest segment is highlighted; reading older text does not auto-scroll.
+Lag over five seconds shows the transcription status. No segments are skipped
+due to slow processing.
+
+This is a running preview that may change, without speaker recognition yet.
+**Stop & Save** saves the audio and automatically starts a full transcription
+including speaker recognition (unless the speaker count is set to 1). A
+preview error does not end the recording. **Cancel** discards both the audio
+and the preview. After an automatic stop at the time limit, the recording
+remains ready to save.
+
+Reloading the page restores the preview and language of a running recording.
+The preview is not a separately saved transcript: it is lost on a backend
+restart, while saved audio and finished transcripts remain. It uses the same
+remote/local ASR settings as the full transcription.
+
+## Platforms
+
+| Environment | Status |
 | --- | --- |
-| Arch Linux + PipeWire-Pulse / PulseAudio | Vývojové prostředí; lokálně ověřené spuštění a backend |
-| Ubuntu 24.04 / Debian 12 a novější | Připravený instalační postup; běh na těchto distribucích zatím neověřen |
-| WSL2 + WSLg | Launcher nevyžaduje systemd; cílové prostředí zatím neověřeno, omezení zvuku níže |
-| Nativní Windows / macOS | Zatím nepodporované desktopovým instalátorem ani recorderem |
+| Arch Linux + PipeWire-Pulse / PulseAudio | Development environment; locally verified launch and backend |
+| Ubuntu 24.04 / Debian 12 and newer | Documented install steps; running on these distros not yet verified |
+| WSL2 + WSLg | Launcher does not require systemd; target environment not yet verified, audio limits below |
+| Native Windows / macOS | Not yet supported by the desktop installer or the recorder |
 
-Jde o **instalaci ze zdrojů**, ne o samostatný distribuční balíček. Desktopový
-launcher potřebuje zachovaný checkout, Python prostředí a sestavenou binárku.
-Žádné systémové služby ani cesty specifické pro Arch nejsou pro běh nutné.
+This is a **source install**, not a standalone distribution package. The
+desktop launcher needs a preserved checkout, a Python environment, and a built
+binary. No system services or Arch-specific paths are required to run it.
 
-## Instalace
+## Installation
 
-Doporučený Python je **3.12** (alternativně 3.11); nejnovější systémový Python
-na rolling-release distribuci nemusí mít dostupné ML wheels. Python lze spravovat
-pomocí `uv`. Pro instalaci z tohoto soukromého GitHub repozitáře potřebuješ přístup.
+The recommended Python is **3.12** (alternatively 3.11); the latest system
+Python on a rolling-release distro may not have ML wheels available. Python
+can be managed with `uv`. Installing from this private GitHub repository
+requires access.
 
-### Ubuntu / Debian — systémové závislosti
+### Ubuntu / Debian — system dependencies
 
 ```bash
 sudo apt update
 sudo apt install -y git curl python3 python3-venv ffmpeg pulseaudio-utils
 
-# Jen pro nativní okno; pro prohlížeč nejsou build závislosti potřeba.
+# Only for the native window; the browser needs no build dependencies.
 sudo apt install -y build-essential pkg-config libwebkit2gtk-4.1-dev \
   libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev
 ```
 
-Na běžném desktopu musí běžet PulseAudio nebo PipeWire s kompatibilní službou
-PipeWire-Pulse. `pulseaudio-utils` dodává klienta `pactl`, ne zvukový server.
+A regular desktop needs PulseAudio or PipeWire with a compatible
+PipeWire-Pulse service running. `pulseaudio-utils` ships the `pactl` client,
+not an audio server.
 
-### Arch Linux — systémové závislosti
+### Arch Linux — system dependencies
 
 ```bash
 sudo pacman -S --needed git curl python uv ffmpeg libpulse
 
-# Jen pro nativní okno:
+# Only for the native window:
 sudo pacman -S --needed base-devel pkgconf webkit2gtk-4.1 openssl \
   libappindicator-gtk3 librsvg xdotool rustup
 rustup default stable
 ```
 
-Použij existující PipeWire-Pulse nebo PulseAudio; **nenahrazuj kvůli aplikaci
-svůj zvukový server**. `libpulse` poskytuje `pactl` i při použití PipeWire.
+Use your existing PipeWire-Pulse or PulseAudio; **do not replace your audio
+server for this app**. `libpulse` provides `pactl` even when using PipeWire.
 
-### Společné kroky — Python a checkout
+### Common steps — Python and checkout
 
-Pokud `uv` není nainstalované, nainstaluj ho podle
-[oficiálního postupu](https://docs.astral.sh/uv/getting-started/installation/),
-například `curl -LsSf https://astral.sh/uv/install.sh | sh`, a otevři nový terminál.
+If `uv` is not installed, install it following the
+[official instructions](https://docs.astral.sh/uv/getting-started/installation/),
+e.g. `curl -LsSf https://astral.sh/uv/install.sh | sh`, then open a new terminal.
 
 ```bash
 git clone https://github.com/janhorak58/sit.git
@@ -72,144 +102,170 @@ uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -r requirements.txt
 ```
 
-Alternativa se systémovým Pythonem 3.11/3.12:
+Alternative with a system Python 3.11/3.12:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 ```
 
-Instalace ML knihoven a první stažení modelů potřebují připojení a volné místo.
-GPU není nutné; výchozí lokální ASR používá CPU. `HF_TOKEN` je potřeba pro gated
-modely rozpoznání mluvčích, ne pro samotné otevření aplikace nebo přepis Whisperem.
+Installing the ML libraries and the first model download need a network
+connection and free disk space. No GPU is required; the default local ASR
+uses the CPU. `HF_TOKEN` is needed for gated speaker-recognition models, not
+for simply opening the app or transcribing.
 
-### Varianta A — aplikace v prohlížeči
+### Option A — app in the browser
 
 ```bash
 .venv/bin/python -m transcriber
 ```
 
-Otevři <http://127.0.0.1:47831>. Backend běží do ukončení příkazu pomocí Ctrl+C.
-Data se standardně ukládají do `~/.local/share/sit` (respektuje `XDG_DATA_HOME`).
+Open <http://127.0.0.1:47831>. The backend runs until the command is
+terminated with Ctrl+C. Data is stored by default in `~/.local/share/shit`
+(respects `XDG_DATA_HOME`).
 
-### Varianta B — nativní desktopové okno
+### Option B — native desktop window
 
-Nainstaluj stabilní Rust přes [rustup](https://rustup.rs/) (na Archu viz výše).
-Při instalaci rustup skriptem poté načti `source "$HOME/.cargo/env"`.
-Systémové build závislosti jsou uvedené výše;
-[oficiální předpoklady Tauri](https://v2.tauri.app/start/prerequisites/).
+Install stable Rust via [rustup](https://rustup.rs/) (see above for Arch).
+After the rustup script install, load `source "$HOME/.cargo/env"`.
+System build dependencies are listed above;
+[official Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
 
 ```bash
 cargo build --release --manifest-path src-tauri/Cargo.toml
 python3 scripts/install-desktop.py
 ```
 
-V nabídce aplikací se objeví **ŠIT**. Z terminálu ho spustíš i absolutní cestou:
+**SHIT** will appear in your application menu. You can also launch it from a
+terminal by absolute path:
 
 ```bash
-~/.local/bin/sit
+~/.local/bin/shit
 ```
 
-Instalátor nevyžaduje sudo. Vytvoří:
+The installer does not require sudo. It creates:
 
-- `~/.local/bin/sit` — launcher s absolutní cestou k checkoutu a `.venv/bin/python`;
-- `${XDG_DATA_HOME:-~/.local/share}/applications/sit.desktop` — položku nabídky;
-- `${XDG_DATA_HOME:-~/.local/share}/icons/sit.png` — ikonu.
+- `~/.local/bin/shit` — a launcher with an absolute path to the checkout and `.venv/bin/python`;
+- `${XDG_DATA_HOME:-~/.local/share}/applications/shit.desktop` — a menu entry;
+- `${XDG_DATA_HOME:-~/.local/share}/icons/shit.png` — an icon.
 
-Opakovaná instalace aktualizuje vlastní soubory; cizí soubor nebo symbolický odkaz
-na některém z cílových míst odmítne změnit. Po přesunutí checkoutu instalátor spusť
-znovu. Aktualizace Rust kódu vyžaduje nový `cargo build --release`; launcher používá
-binárku přímo z checkoutu. Webové/Python změny se projeví po restartu backendu.
+Reinstalling updates its own files; it refuses to change a foreign file or
+symlink at any of the target locations. After moving the checkout, run the
+installer again. Updating the Rust code requires a fresh
+`cargo build --release`; the launcher uses the binary directly from the
+checkout. Web/Python changes take effect after a backend restart.
 
-Launcher znovu použije backend na `127.0.0.1:47831`. Na Linuxu se také může pokusit
-spustit již nainstalovanou službu `transcriber.service`. Pokud služba není dostupná,
-spustí Python přímo — **systemd není podmínka**, ani ve WSL.
-Před otevřením okna čeká na odpověď API; chybnou instalaci vypíše do stderr.
-Při problému proto spusť `~/.local/bin/sit` v terminálu.
+The launcher reuses a backend already running on `127.0.0.1:47831`. On Linux
+it may also try to start an already-installed `transcriber.service`. If the
+service is unavailable, it starts Python directly — **systemd is not
+required**, not even under WSL.
+Before opening the window it waits for the API to respond; a broken install is
+reported on stderr. If something goes wrong, run `~/.local/bin/shit` in a
+terminal.
 
-**Zavření okna ukončí backend, který si okno samo spustilo.** Nejprve dokonči
-uložení nahrávky a zpracování; rozpracovaný přepis se při ukončení přeruší.
-Aktivní recorder se při řádném vypnutí backendu zastaví, dočasný WAV zůstane
-v `_scratch` (nenahrazuje to tlačítko pro uložení nahrávky).
-Ručně spuštěný nebo systemd spravovaný backend okno neukončuje. Pokud mají úlohy
-běžet i po zavření okna, spusť backend předem podle varianty A.
+**Closing the window stops the backend the window itself started.** Finish
+saving a recording and processing first; an in-progress transcription is
+interrupted on shutdown. An active recorder is stopped on a clean backend
+shutdown, and the temporary WAV stays in `_scratch` (this does not replace the
+button for saving a recording).
+A manually started or systemd-managed backend is not stopped by the window.
+If jobs need to keep running after the window closes, start the backend ahead
+of time using Option A.
 
-Odstranění desktopové integrace (nesmaže data, checkout ani `.venv`):
+Remove the desktop integration (does not delete data, the checkout, or `.venv`):
 
 ```bash
 python3 scripts/install-desktop.py --uninstall
 ```
 
-### WSL2 s WSLg
+### WSL2 with WSLg
 
-V PowerShellu na Windows 11 ověř/aktualizuj WSL:
+In PowerShell on Windows 11, verify/update WSL:
 
 ```powershell
 wsl --version
 wsl --update
 ```
 
-Uvnitř Ubuntu ve WSL postupuj podle linuxové instalace výše. Checkout doporučujeme
-v linuxovém souborovém systému, např. `~/sit`, ne `/mnt/c/...` kvůli výkonu a právům.
-WSLg poskytuje grafické prostředí a zvukové propojení; nenastavuj ručně `DISPLAY`
-ani `PULSE_SERVER`, pokud je již WSLg nastavilo. Nespouštěj pro tuto aplikaci další
-PulseAudio server nad WSLg. Viz [Linux GUI aplikace ve WSL](https://learn.microsoft.com/windows/wsl/tutorials/gui-apps).
+Inside Ubuntu under WSL, follow the Linux installation above. We recommend
+checking out in the Linux filesystem, e.g. `~/sit`, not `/mnt/c/...`, for
+performance and permissions. WSLg provides the graphical environment and
+audio bridge; do not manually set `DISPLAY` or `PULSE_SERVER` if WSLg already
+set them. Do not start an additional PulseAudio server on top of WSLg for
+this app. See [Linux GUI apps in WSL](https://learn.microsoft.com/windows/wsl/tutorials/gui-apps).
 
-**Mikrofon a zvuk Windows nejsou totéž.** Recorder potřebuje PulseAudio moduly
-`module-null-sink`, `module-loopback` a monitor výstupu. WSLg je nemusí poskytovat;
-systémový zvuk Windows nelze touto implementací zaručit. Při chybě použij
-**Nahrát soubor**: pořiď záznam ve Windows a nahraj ho přes UI. Upload používá
-`ffmpeg`, ne PulseAudio. Podpora WSLg není podpora nativního Windows buildu.
+**Windows microphone and audio are not the same thing.** The recorder needs
+the PulseAudio modules `module-null-sink`, `module-loopback`, and an output
+monitor. WSLg may not provide them; Windows system audio cannot be guaranteed
+by this implementation. On error, use **Upload File**: record in Windows and
+upload it through the UI. Upload uses `ffmpeg`, not PulseAudio. WSLg support
+is not the same as native Windows build support.
 
-## Data a konfigurace
+## Data and configuration
 
-Volitelné `.env` v kořeni checkoutu je ignorované Gitem; nikdy do repozitáře
-neukládej tokeny. Pro existující knihovnu nastav například
-`TRANSCRIBER_DATA_DIR=/absolutni/cesta/ke/knihovne`.
-**Původní `/data` se automaticky nepřesouvá:** pokud jej dosud používáš mimo Docker,
-zachovej `TRANSCRIBER_DATA_DIR=/data` v prostředí nebo `.env`.
+An optional `.env` at the checkout root is git-ignored; never commit tokens to
+the repository. For an existing library, set for example
+`TRANSCRIBER_DATA_DIR=/absolute/path/to/library`.
+**An existing `/data` is not moved automatically:** if you already use it
+outside Docker, keep `TRANSCRIBER_DATA_DIR=/data` in the environment or `.env`.
 
-| Proměnná | Výchozí hodnota | Účel |
+### Migrating from ŠIT
+
+The renamed app uses `~/.local/share/shit` by default. Existing recordings
+remain in `~/.local/share/sit`; either move that directory to the new location
+or set `TRANSCRIBER_DATA_DIR=~/.local/share/sit` before starting SHIT.
+
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `TRANSCRIBER_DATA_DIR` | `${XDG_DATA_HOME:-~/.local/share}/sit`; Docker `/data` | Kořen knihovny; explicitní hodnota má přednost, `~` se rozbalí |
-| `TRANSCRIBER_HOST` / `TRANSCRIBER_PORT` | `127.0.0.1` / `47831` | Adresa backendu při ručním spuštění |
-| `HF_TOKEN` | prázdné | Přístup ke gated pyannote modelům |
-| `WHISPER_MODEL` | `small` | Lokální faster-whisper model |
-| `WHISPER_DEVICE` / `WHISPER_COMPUTE_TYPE` | `cpu` / `int8` | Lokální inference |
-| `DIARIZE_MODEL` | `pyannote/speaker-diarization-3.1` | Lokální diarizace |
-| `SPARK_WHISPER_URL` | `http://127.0.0.1:8204/v1/audio/transcriptions` | Vzdálený ASR; prázdné = lokální |
-| `SPARK_WHISPER_MODEL` | `large-v3` | Vzdálený model |
-| `SPARK_DIARIZER_URL` | `http://127.0.0.1:8000/v1/audio/diarizations` | Vzdálená diarizace; prázdné = lokální |
-| `OMNIROUTE_URL` / `OMNIROUTE_MODEL` | `http://127.0.0.1:20128` / `cc/claude-sonnet-5` | Server a model pro souhrny; nutné nastavit podle svého serveru |
-| `GPT_OSS_API_KEY` | prázdné | Autorizace serveru pro souhrny |
-| `MAX_RECORDING_SECONDS` | `10800` | Maximální délka záznamu v sekundách |
+| `TRANSCRIBER_DATA_DIR` | `${XDG_DATA_HOME:-~/.local/share}/shit`; Docker `/data` | Library root; an explicit value takes precedence, `~` is expanded |
+| `TRANSCRIBER_HOST` / `TRANSCRIBER_PORT` | `127.0.0.1` / `47831` | Backend address for manual runs |
+| `HF_TOKEN` | empty | Access to gated pyannote models |
+| `LOCAL_ASR_MODEL` | `nemo-canary-1b-v2` | Local ONNX ASR model (`onnx-asr`); `nemo-parakeet-tdt-0.6b-v3` is faster but ignores the language choice |
+| `LOCAL_ASR_PATH` | empty | Path to an offline model copy; empty = HuggingFace cache |
+| `LOCAL_ASR_QUANTIZATION` | `int8` | ONNX weight quantization; empty = full precision |
+| `LOCAL_ASR_DEVICE` | `cpu` | `cpu` or `cuda` (requires `onnxruntime-gpu`) |
+| `LOCAL_ASR_VAD_MODEL` | `silero` | VAD that cuts audio into windows before recognition |
+| `LOCAL_ASR_WINDOW_SECONDS` | `30` | Max window length sent to the model |
+| `LOCAL_ASR_DEFAULT_LANGUAGE` | `cs` | Language pinned when a recording carries no explicit one |
+| `DIARIZE_MODEL` | `pyannote/speaker-diarization-3.1` | Local diarization |
+| `SPARK_WHISPER_URL` | `http://127.0.0.1:8204/v1/audio/transcriptions` | Remote ASR; empty = local. For the `canary/` service, port 8208 |
+| `SPARK_WHISPER_MODEL` | `large-v3` | Remote model; for the `canary/` service, `nemo-canary-1b-v2` |
+| `SPARK_DIARIZER_URL` | `http://127.0.0.1:8000/v1/audio/diarizations` | Remote diarization; empty = local |
+| `OMNIROUTE_URL` / `OMNIROUTE_MODEL` | `http://127.0.0.1:20128` / `cc/claude-sonnet-5` | Server and model for summaries; must be set to your own server |
+| `GPT_OSS_API_KEY` | empty | Authorization for the summary server |
+| `MAX_RECORDING_SECONDS` | `10800` | Maximum recording length in seconds |
 
-Lokální pyannote potřebuje souhlas s podmínkami modelů
-[speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) a
+Local pyannote needs you to accept the model terms at
+[speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) and
 [segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0).
-Vzdálené modelové servery nejsou součástí běžící desktopové aplikace; vlastní
-Spark diarizační službu popisuje [diarizer/README.md](diarizer/README.md).
+The remote model servers are not part of the running desktop app; the Spark
+diarization service is documented at [diarizer/README.md](diarizer/README.md),
+and the Canary ASR service at [canary/README.md](canary/README.md).
 
-Desktopový launcher nastavuje `TRANSCRIBER_PROJECT_DIR` a `TRANSCRIBER_PYTHON`
-na absolutní cesty. Při vlastním spuštění binárky je lze nastavit v prostředí.
-Bez nich hledá checkout v místě sestavení a Python v jeho `.venv/bin/python`.
-Desktop vždy používá `127.0.0.1:47831`; jiný port backendu otevři v prohlížeči.
-Relativní `XDG_DATA_HOME` se ignoruje podle XDG specifikace.
+The desktop launcher sets `TRANSCRIBER_PROJECT_DIR` and `TRANSCRIBER_PYTHON`
+to absolute paths. When running the binary yourself, set them in the
+environment. Without them it looks for the checkout at the build location and
+Python at its `.venv/bin/python`. The desktop always uses
+`127.0.0.1:47831`; open a different backend port in the browser instead.
+A relative `XDG_DATA_HOME` is ignored per the XDG spec.
 
-Přepisy: `<folder>/<name>.txt`; strukturovaná data: `<name>.meeting.json`;
-nahrávky: `<folder>/audio/<name>.wav`; souhrny: `<name>.summary.md` / `.summary.json`.
-Starší audio přímo ve složce zůstává čitelné. Pracovní soubory jsou v `_scratch/`.
+Transcripts: `<folder>/<name>.txt`; structured data: `<name>.meeting.json`;
+recordings: `<folder>/audio/<name>.wav`; summaries: `<name>.summary.md` /
+`.summary.json`. Older audio directly in a folder remains readable. Working
+files live in `_scratch/`.
 
-### Nahrávání a volitelná integrace správce souborů
+### Recording and the optional file-manager integration
 
-`pactl info` musí vidět zvukový server uživatele, pod kterým běží backend.
-Chybějící `pactl`, `ffmpeg` nebo odmítnuté PulseAudio moduly vracejí chybu v UI;
-chybějící zvukový server nebrání práci s knihovnou a uploadu souboru.
+`pactl info` must see the audio server for the user the backend runs as.
+Missing `pactl`, `ffmpeg`, or rejected PulseAudio modules return an error in
+the UI; a missing audio server does not block library browsing or file
+upload.
 
-Tlačítko **Otevřít na disku** zatím používá samostatný pomocník
-`transcriber-opener` na `127.0.0.1:47833`. Tento pomocník není součástí repozitáře
-ani desktopového instalátoru; bez něj tlačítko oznámí chybu. Ostatní funkce ho
-nepotřebují — knihovnu lze otevřít ručně v jejím datovém adresáři.
+The **Open on Disk** button currently uses a separate helper,
+`transcriber-opener`, on `127.0.0.1:47833`. This helper is not part of the
+repository or the desktop installer; without it, the button reports an error.
+No other feature needs it — you can open the library manually in its data
+directory.
 
 ## Docker
 
@@ -218,37 +274,47 @@ docker build -t transcriber .
 docker run --rm -p 127.0.0.1:47831:47831 -v "$PWD/data:/data" transcriber
 ```
 
-Obraz explicitně používá `/data` a bind `0.0.0.0` uvnitř kontejneru. Ukázka
-publikuje port pouze lokálně. Upload nepotřebuje zvukový socket; přímý záznam ano
-(PulseAudio socket hostitele, přístupová práva a `PULSE_SERVER`). Desktopový
-instalátor neinstaluje kontejner. Konfiguraci můžeš předat přes `--env-file .env`.
+The image explicitly uses `/data` and binds `0.0.0.0` inside the container.
+The example publishes the port locally only. Upload does not need an audio
+socket; direct recording does (the host's PulseAudio socket, permissions, and
+`PULSE_SERVER`). The desktop installer does not install a container.
+Configuration can be passed via `--env-file .env`.
 
-**API nemá přihlašování.** Nevystavuj ho veřejně. Pro LAN přístup je nutné vědomě
-změnit bind/port mapping a zabezpečit přístup; výchozí lokální bind je záměrný.
+**The API has no authentication.** Do not expose it publicly. For LAN access
+you must deliberately change the bind/port mapping and secure access; the
+default local bind is intentional.
 
-## Vývoj a API
+## Development and API
 
 ```bash
 uv pip install --python .venv/bin/python -r requirements-dev.txt
-.venv/bin/python -m pytest tests/test_services.py
+.venv/bin/python -m pytest tests
 node tests/group_segments.mjs
 ```
 
-| Metoda | Cesta | Účel |
+| Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/` | UI |
-| POST | `/start`, `/stop`, `/recording/cancel` | Životní cyklus nahrávání |
-| GET | `/recording/status`, `/progress` | Stav nahrávání / zpracování |
-| POST | `/upload` | Raw audio/video upload a převod přes ffmpeg |
-| POST | `/transcribe`, `/diarize` | Přepis nebo nové rozpoznání mluvčích |
-| POST | `/summaries` | Souhrn |
-| GET | `/asr/status`, `/asr/diagnostics` | Dostupnost a diagnostika modelů |
-| GET | `/projects`, `/library/browse` | Procházení knihovny |
-| POST | `/projects/suggest-folder` | Návrh složky |
-| GET | `/library/file`, `/library/meeting`, `/library/summary-json`, `/library/audio` | Výstupy a audio |
-| POST | `/library/mkdir`, `/library/move`, `/library/delete` | Úpravy knihovny |
-| POST | `/library/folder/rename`, `/library/folder/delete`, `/library/rename-speaker` | Přejmenování a mazání |
-| GET | `/download` | Stažení textového výstupu |
+| POST | `/start`, `/stop`, `/recording/cancel` | Recording lifecycle |
+| GET | `/recording/status`, `/progress` | Recording / processing status |
+| POST | `/upload` | Raw audio/video upload and conversion via ffmpeg |
+| POST | `/transcribe`, `/diarize` | Transcription or a fresh speaker-recognition pass |
+| POST | `/summaries` | Summary |
+| GET | `/asr/status`, `/asr/diagnostics` | Model availability and diagnostics |
+| GET | `/projects`, `/library/browse` | Library browsing |
+| POST | `/projects/suggest-folder` | Folder suggestion |
+| GET | `/library/file`, `/library/meeting`, `/library/summary-json`, `/library/audio` | Outputs and audio |
+| POST | `/library/mkdir`, `/library/move`, `/library/delete` | Library edits |
+| POST | `/library/folder/rename`, `/library/folder/delete`, `/library/rename-speaker` | Renames and deletes |
+| GET | `/download` | Text output download |
 
-Očekávané aplikační chyby vracejí HTTP 200 s `{"error": "..."}`; UI kontroluje toto
-pole. Validační chyby API mohou vracet jiné HTTP statusy.
+`POST /start` accepts an optional `{"language":"cs","live":true}` (`"en"` for
+English, `""` for automatic detection; `"live":false` starts recording but
+runs no live transcription at all — useful to save compute).
+`/recording/status` also returns `available` for an unsaved stopped
+recording, and `live`: a session id (`null` if live transcription is off),
+state, language, timed preview segments, audio length, processed length, and
+any error.
+
+Expected application errors return HTTP 200 with `{"error": "..."}`; the UI
+checks this field. API validation errors may return other HTTP statuses.

@@ -1,4 +1,4 @@
-"""Transcription pipeline: whisper -> optional diarization -> meeting.json + text file."""
+"""Transcription pipeline: ASR -> optional diarization -> meeting.json + text file."""
 
 import dataclasses
 from datetime import datetime
@@ -11,10 +11,10 @@ import threading
 from .asr import Segment, transcribe
 from .config import (
     DIARIZE_MODEL,
+    LOCAL_ASR_DEVICE,
+    LOCAL_ASR_MODEL,
     SPARK_DIARIZER_URL,
     SPARK_WHISPER_MODEL,
-    WHISPER_DEVICE,
-    WHISPER_MODEL,
 )
 from .library import meeting_json_path_for
 from .models import get_diarize_pipeline
@@ -36,13 +36,13 @@ def transcribe_segments(wav_path, language, cap):
     """Transcribe remotely when available, with transparent local fallback."""
     def on_segment(seg, duration):
         pct = min(cap - 1, int(seg.end / max(duration, 0.01) * cap))
-        progress.update(percent=pct, message=f"Přepisuji audio... {pct}%")
+        progress.update(percent=pct, message=f"Transcribing audio... {pct}%")
 
     result = transcribe(wav_path, language, on_segment)
     progress.update(
         backend=result.backend,
-        message="Přepisuji na pracovním Sparku..." if result.backend == "spark"
-        else "Přepisuji lokálně...",
+        message="Transcribing on Working Spark..." if result.backend == "spark"
+        else "Transcribing locally...",
     )
     return result
 
@@ -123,7 +123,7 @@ def _remote_speaker_turns(wav_path, num_speakers):
         raise ValueError(str(body.get("error") or body.get("detail")))
     turns = body.get("segments")
     if not turns:
-        raise ValueError("Spark diarizer nevrátil žádné segmenty.")
+        raise ValueError("Spark diarizer returned no segments.")
     return turns, body.get("model") or DIARIZE_MODEL
 
 
@@ -142,7 +142,7 @@ def label_speakers(wav_path, segments, num_speakers):
     global _last_remote_diarization_error
     turns, backend, model = None, "local", DIARIZE_MODEL
     if SPARK_DIARIZER_URL:
-        progress.update(stage="diarizing", percent=75, message="Rozpoznávám mluvčí na Sparku...")
+        progress.update(stage="diarizing", percent=75, message="Recognizing speakers on Spark...")
         try:
             turns, model = _remote_speaker_turns(wav_path, num_speakers)
             backend = "spark"
@@ -155,10 +155,10 @@ def label_speakers(wav_path, segments, num_speakers):
                 _last_remote_diarization_error,
             )
     if turns is None:
-        progress.update(stage="diarizing", percent=75, message="Rozpoznávám mluvčí lokálně...")
+        progress.update(stage="diarizing", percent=75, message="Recognizing speakers locally...")
         turns = _local_speaker_turns(wav_path, num_speakers)
 
-    progress.update(stage="merging", percent=95, message="Skládám výstup...")
+    progress.update(stage="merging", percent=95, message="Assembling output...")
     labeled = [
         dataclasses.replace(seg, speaker=speaker_at(turns, (seg.start + seg.end) / 2))
         for seg in segments
@@ -200,7 +200,7 @@ def rerun_diarization(wav_path, txt_path, num_speakers):
         data["num_speakers"] = num_speakers
         data["diarization"] = {
             "backend": diarization.backend,
-            "where": "Pracovní Spark" if diarization.backend == "spark" else "Lokálně",
+            "where": "Working Spark" if diarization.backend == "spark" else "Locally",
             "model": diarization.model,
             "applied": True,
             "note": None,
@@ -211,9 +211,9 @@ def rerun_diarization(wav_path, txt_path, num_speakers):
             stage="done",
             percent=100,
             message=(
-                "Mluvčí byli rozpoznáni na Sparku."
+                "Speakers were recognized on Spark."
                 if diarization.backend == "spark"
-                else "Mluvčí byli rozpoznáni lokálně."
+                else "Speakers were recognized locally."
             ),
             warning=None,
             text=text,
@@ -230,7 +230,7 @@ def start_diarization(wav_path, txt_path, num_speakers):
     if not progress.begin(
         stage="diarizing",
         percent=70,
-        message="Rozpoznávám mluvčí...",
+        message="Recognizing speakers...",
         source_path=rel_to_data(wav_path),
         operation="diarize",
         saved_path=rel_to_data(txt_path),
@@ -263,8 +263,8 @@ def run_pipeline(wav_path, txt_path, language, num_speakers):
             except Exception as exc:
                 log.warning("Diarization failed, continuing without speaker labels: %s", exc)
                 warning = (
-                    "Rozpoznání mluvčích se nezdařilo na Sparku ani lokálně — "
-                    "přepis pokračuje bez rozlišení mluvčích."
+                    "Speaker recognition failed on both Spark and locally — "
+                    "the transcript continues without speaker separation."
                 )
                 segments = result.segments
 
@@ -282,15 +282,15 @@ def run_pipeline(wav_path, txt_path, language, num_speakers):
             "duration": round(result.duration, 2),
             "asr": {
                 "backend": result.backend,
-                "where": "Pracovní Spark" if result.backend == "spark" else "Lokálně",
-                "model": SPARK_WHISPER_MODEL if result.backend == "spark" else WHISPER_MODEL,
-                "device": None if result.backend == "spark" else WHISPER_DEVICE,
+                "where": "Working Spark" if result.backend == "spark" else "Locally",
+                "model": SPARK_WHISPER_MODEL if result.backend == "spark" else LOCAL_ASR_MODEL,
+                "device": None if result.backend == "spark" else LOCAL_ASR_DEVICE,
             },
             "diarization": {
                 "backend": diarization_backend,
                 "where": (
-                    "Pracovní Spark" if diarization_backend == "spark"
-                    else "Lokálně" if diarization_backend == "local"
+                    "Working Spark" if diarization_backend == "spark"
+                    else "Locally" if diarization_backend == "local"
                     else None
                 ),
                 "model": diarization_model if diarized else None,
@@ -303,7 +303,7 @@ def run_pipeline(wav_path, txt_path, language, num_speakers):
         progress.finish(
             stage="done",
             percent=100,
-            message="Hotovo." if not warning else warning,
+            message="Done." if not warning else warning,
             warning=warning,
             text=text,
             saved_path=rel_to_data(txt_path),
@@ -316,7 +316,7 @@ def run_pipeline(wav_path, txt_path, language, num_speakers):
 def start_pipeline(wav_path, txt_path, language, num_speakers):
     """Start the single supported transcription job, returning whether it began."""
     if not progress.begin(
-        message="Přepisuji audio...",
+        message="Transcribing audio...",
         operation="transcribe",
         source_path=rel_to_data(wav_path),
         saved_path=rel_to_data(txt_path),

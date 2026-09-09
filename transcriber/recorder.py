@@ -18,14 +18,14 @@ def pactl(*args):
         ).stdout.strip()
     except FileNotFoundError as exc:
         raise AppError(
-            "Chybí pactl. Nainstaluj pulseaudio-utils (Ubuntu/Debian) nebo "
-            "libpulse (Arch). Hotový audiosoubor můžeš nahrát i bez něj."
+            "Missing pactl. Install pulseaudio-utils (Ubuntu/Debian) or "
+            "libpulse (Arch). You can upload a finished audio file without it."
         ) from exc
     except subprocess.CalledProcessError as exc:
         raise AppError(
-            "Zvukový server nepodporuje požadované nahrávání nebo není dostupný. "
-            "Zkontroluj PulseAudio / PipeWire-Pulse a přístup k mikrofonu. "
-            "WSLg nemusí podporovat loopback zvuku Windows; použij nahrání souboru. "
+            "The audio server does not support the requested recording, or is not available. "
+            "Check PulseAudio / PipeWire-Pulse and microphone access. "
+            "WSLg may not support Windows audio loopback; use file upload instead. "
             f"Detail: {(exc.stderr or '').strip()}"
         ) from exc
 
@@ -39,6 +39,9 @@ class Recorder:
         self.started_at = None
         self.modules = {"sink": None, "loop1": None, "loop2": None}
         self._lock = threading.Lock()
+        # Called under the capture lock before another recording can start.
+        # The callback only signals live transcription; it must not wait for ASR.
+        self.on_stop = None
 
     @property
     def is_recording(self):
@@ -47,11 +50,11 @@ class Recorder:
     def start(self):
         with self._lock:
             if self.is_recording:
-                raise AppError("Nahrávání už běží.")
+                raise AppError("Recording is already running.")
             if not sys.platform.startswith("linux"):
                 raise AppError(
-                    "Přímé nahrávání vyžaduje Linux s PulseAudio / PipeWire-Pulse. "
-                    "Na této platformě použij nahrání audiosouboru."
+                    "Direct recording requires Linux with PulseAudio / PipeWire-Pulse. "
+                    "On this platform, upload an audio file instead."
                 )
             try:
                 self.modules["sink"] = pactl(
@@ -65,15 +68,22 @@ class Recorder:
                     "load-module", "module-loopback",
                     "source=@DEFAULT_SINK@.monitor", f"sink={SINK_NAME}",
                 )
+                # ffmpeg opens (and, via -y, truncates) the output file only
+                # once its own startup completes, which is asynchronous with
+                # this call returning. Remove any stale wav synchronously so a
+                # live-draft worker started right after this never reads a
+                # previous session's leftover audio before ffmpeg gets to it.
+                self.wav_path.unlink(missing_ok=True)
                 self.proc = subprocess.Popen([
                     "ffmpeg", "-y", "-f", "pulse", "-i", f"{SINK_NAME}.monitor",
-                    "-ac", "1", "-ar", SAMPLE_RATE, str(self.wav_path),
+                    "-ac", "1", "-ar", SAMPLE_RATE, "-c:a", "pcm_s16le",
+                    "-flush_packets", "1", str(self.wav_path),
                 ])
                 self.started_at = time.time()
             except FileNotFoundError as exc:
                 self._stop_locked()
                 raise AppError(
-                    "Chybí ffmpeg. Nainstaluj ffmpeg pro nahrávání a převod audia."
+                    "Missing ffmpeg. Install ffmpeg for recording and audio conversion."
                 ) from exc
             except Exception:
                 self._stop_locked()
@@ -93,7 +103,8 @@ class Recorder:
             return self._stop_locked()
 
     def _stop_locked(self):
-        """``stop()`` body; caller must hold ``self._lock``."""
+        """Caller holds the capture lock; notification cannot race a new capture."""
+        was_recording = self.proc is not None
         if self.proc:
             self.proc.send_signal(signal.SIGINT)
             self.proc.wait()
@@ -103,6 +114,8 @@ class Recorder:
             if self.modules[key]:
                 subprocess.run(["pactl", "unload-module", self.modules[key]], check=False)
                 self.modules[key] = None
+        if was_recording and self.on_stop is not None:
+            self.on_stop()
         return self.wav_path.exists()
 
 

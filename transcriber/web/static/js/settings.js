@@ -3,11 +3,11 @@ import {$, el} from './dom.js';
 
 // Known remote failures mapped to the one thing that actually fixes them.
 const HINTS = [
-  [/vllm\[audio\]/i, 'Na Sparku chybí audio podpora vLLM — doinstaluj `pip install vllm[audio]` a restartuj server. Do té doby poběží všechno lokálně.'],
-  [/Maximum file size|audio_filesize_mb/i, 'Server odmítá velké soubory. Přepis se posílá po 15minutových mp3 kusech; pokud limit hlásí i na ně, zvyš na vLLM `--max-audio-filesize-mb`.'],
-  [/Connection refused|ConnectError|timed out/i, 'Endpoint neodpovídá — Spark neběží, jiný port, nebo cestu blokuje VPN.'],
-  [/404|Not Found/i, 'Endpoint existuje, ale cesta k transkripci ne — zkontroluj SPARK_WHISPER_URL v .env.'],
-  [/model/i, 'Model se nenašel — jméno v SPARK_WHISPER_MODEL musí odpovídat tomu z /v1/models.'],
+  [/vllm\[audio\]/i, 'Spark is missing vLLM audio support — install `pip install vllm[audio]` and restart the server. Until then everything will run locally.'],
+  [/Maximum file size|audio_filesize_mb/i, 'The server is rejecting large files. Transcription is sent in 15-minute mp3 chunks; if the limit still hits, raise vLLM `--max-audio-filesize-mb`.'],
+  [/Connection refused|ConnectError|timed out/i, 'The endpoint is not responding — Spark is not running, uses a different port, or the path is blocked by a VPN.'],
+  [/404|Not Found/i, 'The endpoint exists, but the transcription path does not — check SPARK_WHISPER_URL in .env.'],
+  [/model/i, 'Model not found — the name in SPARK_WHISPER_MODEL must match one from /v1/models.'],
 ];
 
 function hintFor(detail) {
@@ -28,10 +28,10 @@ function card(title, children) {
 
 export async function loadSettings() {
   const wrap = $('settings-body');
-  wrap.replaceChildren(el('p', {className: 'status-line', textContent: 'Testuji engine…'}));
+  wrap.replaceChildren(el('p', {className: 'status-line', textContent: 'Testing engine…'}));
   const j = await api.diagnostics();
   if (j.error) {
-    wrap.replaceChildren(el('p', {className: 'status-line', textContent: 'Chyba: ' + j.error}));
+    wrap.replaceChildren(el('p', {className: 'status-line', textContent: 'Error: ' + j.error}));
     return;
   }
   const remote = j.remote || {};
@@ -42,37 +42,37 @@ export async function loadSettings() {
   const hint = ok ? null : hintFor(upload.detail || remote.last_error);
 
   const cards = [
-    card('Vzdálený engine (Spark)', [
-      row('Stav', ok ? 'Funguje — přepisy jdou na Spark' : 'Nefunguje — přepisuje se lokálně', ok ? 'ok' : 'bad'),
+    card('Remote engine (Spark)', [
+      row('Status', ok ? 'Working — transcriptions go to Spark' : 'Not working — transcribing locally', ok ? 'ok' : 'bad'),
       row('Endpoint', remote.url),
       row('Model', remote.model),
-      row('Odpověď /v1/models', remote.probe && remote.probe.available ? 'OK' : 'nedostupné', remote.probe && remote.probe.available ? 'ok' : 'bad'),
-      row('Test uploadu (1 s audia)', upload.detail),
-      row('Poslední chyba při přepisu', remote.last_error),
+      row('/v1/models response', remote.probe && remote.probe.available ? 'OK' : 'unavailable', remote.probe && remote.probe.available ? 'ok' : 'bad'),
+      row('Upload test (1s of audio)', upload.detail),
+      row('Last transcription error', remote.last_error),
       ...(hint ? [el('p', {className: 'sethint', textContent: '→ ' + hint})] : []),
     ]),
-    card('Lokální model (fallback)', [
+    card('Local model (fallback)', [
       row('Model', (j.local || {}).model),
-      row('Zařízení', (j.local || {}).device),
-      row('Přesnost', (j.local || {}).compute_type),
+      row('Device', (j.local || {}).device),
+      row('Precision', (j.local || {}).compute_type),
     ]),
-    card('Rozpoznávání mluvčích', [
+    card('Speaker recognition', [
       row(
-        'Primární engine',
-        diarizationRemote.available ? 'Pracovní Spark' : 'Spark nedostupný — lokální fallback',
+        'Primary engine',
+        diarizationRemote.available ? 'Remote Spark' : 'Spark unavailable — local fallback',
         diarizationRemote.available ? 'ok' : 'bad',
       ),
       row('Spark model', diarizationRemote.model),
-      row('Spark zařízení', diarizationRemote.device),
-      row('Lokální fallback', diarization.local_model),
+      row('Spark device', diarizationRemote.device),
+      row('Local fallback', diarization.local_model),
       row(
-        'HF_TOKEN pro fallback',
-        diarization.hf_token ? 'nastavený' : 'chybí',
+        'HF_TOKEN for fallback',
+        diarization.hf_token ? 'set' : 'missing',
         diarization.hf_token ? 'ok' : 'bad',
       ),
       ...(diarizationRemote.last_error ? [el('p', {
         className: 'sethint',
-        textContent: '→ Spark diarizace: ' + diarizationRemote.last_error,
+        textContent: '→ Spark diarization: ' + diarizationRemote.last_error,
       })] : []),
     ]),
   ];
