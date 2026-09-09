@@ -47,12 +47,13 @@ def test_local_transcription_always_pins_a_language(monkeypatch, tmp_path):
 
 def test_summarize_returns_structured_data_with_evidence_timestamps(monkeypatch):
     seen = {}
-    llm_json = (
-        '{"summary": "Team discussed launch.", '
-        '"decisions": [{"text": "Ship Friday", "evidence_index": 1}], '
-        '"action_items": [{"text": "Write docs", "owner": "Jan", "deadline": "Friday", "evidence_index": 0}], '
-        '"open_questions": []}'
-    )
+    llm_json = json.dumps({
+        "summary": "Team discussed launch.",
+        "chapters": [{"title": "Launch", "summary": "Deadline agreed.", "start_index": 0, "end_index": 1}],
+        "decisions": [{"text": "Ship Friday", "rationale": "The release is ready.", "alternatives": [], "evidence_indexes": [1]}],
+        "action_items": [{"text": "Write docs", "owner": "Jan", "deadline": "Friday", "priority": "high", "evidence_indexes": [0]}],
+        "open_questions": [], "risks": [], "speaker_contributions": [], "follow_up": "Jan will publish docs.", "changes_since_last": [],
+    })
     def fake_post(url, **kwargs):
         seen.update(url=url, **kwargs)
         return SimpleNamespace(
@@ -69,16 +70,20 @@ def test_summarize_returns_structured_data_with_evidence_timestamps(monkeypatch)
     result = summarize("We need docs.\nLet's ship Friday.", "Acme", segments)
 
     assert result["summary"] == "Team discussed launch."
-    assert result["decisions"] == [{"text": "Ship Friday", "segment_start": 5.0}]
-    assert result["action_items"] == [
-        {"text": "Write docs", "segment_start": 0.0, "owner": "Jan", "deadline": "Friday"}
-    ]
-    assert result["open_questions"] == []
+    assert result["decisions"] == [{
+        "text": "Ship Friday", "rationale": "The release is ready.", "alternatives": [],
+        "evidence": [{"start": 5.0, "end": 10.0, "speaker": "Petr"}],
+    }]
+    assert result["action_items"] == [{
+        "text": "Write docs", "owner": "Jan", "deadline": "Friday", "priority": "high",
+        "evidence": [{"start": 0.0, "end": 5.0, "speaker": "Jan"}],
+    }]
+    assert result["chapters"][0]["evidence"][1]["start"] == 5.0
     assert seen["json"]["stream"] is False
     assert "Project: Acme" in seen["json"]["messages"][1]["content"]
     assert "[1] 00:05 Petr:" in seen["json"]["messages"][1]["content"]
     assert seen["headers"] == {"Authorization": "Bearer test-token"}
-    assert seen["json"]["response_format"]["json_schema"]["name"] == "meeting_summary"
+    assert seen["json"]["response_format"]["json_schema"]["name"] == "meeting_intelligence"
 
 
 def test_summarize_falls_back_to_raw_text_on_unparseable_response(monkeypatch):
@@ -90,7 +95,8 @@ def test_summarize_falls_back_to_raw_text_on_unparseable_response(monkeypatch):
     monkeypatch.setattr("transcriber.summary.httpx.post", fake_post)
     result = summarize("Hello")
     assert result == {
-        "summary": "not json at all", "decisions": [], "action_items": [], "open_questions": [],
+        "summary": "not json at all", "chapters": [], "decisions": [], "action_items": [],
+        "open_questions": [], "risks": [], "speaker_contributions": [], "follow_up": "", "changes_since_last": [],
     }
 
 
@@ -98,10 +104,9 @@ def test_render_markdown_omits_empty_sections():
     from transcriber.summary import render_markdown
 
     markdown = render_markdown({
-        "summary": "Short recap.",
-        "decisions": [],
-        "action_items": [{"text": "Follow up", "owner": None, "deadline": None, "segment_start": None}],
-        "open_questions": [],
+        "summary": "Short recap.", "chapters": [], "decisions": [],
+        "action_items": [{"text": "Follow up", "owner": None, "deadline": None}],
+        "open_questions": [], "risks": [], "changes_since_last": [], "follow_up": "",
     })
     assert markdown == "## Summary\nShort recap.\n\n## Action items\n- Follow up"
     assert "Decisions" not in markdown
@@ -648,6 +653,8 @@ def test_delete_summary_removes_structured_summary_sidecar(monkeypatch, tmp_path
 
     assert not (tmp_path / "meeting.summary.md").exists()
     assert not (tmp_path / "meeting.summary.json").exists()
+
+
 
 
 def test_upload_converts_arbitrary_audio_and_stores_it(monkeypatch, tmp_path):

@@ -80,30 +80,73 @@ function renderTranscript(path, segments, audio) {
   });
 }
 
-function summarySection(wrap, title, items, render) {
-  if (!items || !items.length) return;
-  wrap.appendChild(el('p', {className: 'side-label', textContent: title}));
-  items.forEach(item => wrap.appendChild(render(item)));
+function evidenceLinks(item, audio) {
+  const evidence = item.evidence || (item.segment_start == null ? [] : [{start: item.segment_start}]);
+  if (!evidence.length) return null;
+  const wrap = el('div', {className: 'evidence-links'});
+  evidence.forEach((source, index) => {
+    const link = el('button', {className: 'evidence-link', textContent: index ? 'Also ' + formatTime(source.start) : 'Source ' + formatTime(source.start)});
+    link.onclick = () => seekTo(audio, source.start);
+    wrap.appendChild(link);
+  });
+  return wrap;
 }
 
-function renderSummary(data) {
+function briefItem(item, audio, details = []) {
+  const body = [el('div', {className: 'brief-item-text', textContent: item.text})];
+  details.filter(Boolean).forEach(detail => body.push(el('p', {className: 'brief-item-detail', textContent: detail})));
+  const evidence = evidenceLinks(item, audio);
+  if (evidence) body.push(evidence);
+  return el('article', {className: 'brief-item'}, body);
+}
+
+function briefSection(wrap, title, items, render) {
+  if (!items?.length) return;
+  const section = el('section', {className: 'brief-section'}, [el('p', {className: 'brief-label', textContent: title})]);
+  items.forEach((item, index) => section.appendChild(render(item, index)));
+  wrap.appendChild(section);
+}
+
+function renderSummary(data, audio) {
   const wrap = $('meeting-summary');
   wrap.replaceChildren();
-  if (!data || !data.markdown && !data.summary && !(data.decisions || []).length && !(data.action_items || []).length && !(data.open_questions || []).length) {
-    wrap.appendChild(el('div', {className: 'empty', textContent: 'No summary yet.'}));
+  if (!data || (!data.markdown && !data.summary)) {
+    wrap.appendChild(el('div', {className: 'empty', textContent: 'No brief yet. Generate it from Edit.'}));
     return;
   }
   if (data.markdown) {
     wrap.appendChild(el('pre', {className: 'meeting-summary-markdown', textContent: data.markdown}));
     return;
   }
-  if (data.summary) wrap.appendChild(el('p', {className: 'meeting-summary-text', textContent: data.summary}));
-  summarySection(wrap, 'Decisions', data.decisions, d => el('div', {className: 'meeting-item', textContent: d.text}));
-  summarySection(wrap, 'Tasks', data.action_items, a => el('div', {
-    className: 'meeting-item',
-    textContent: a.text + (a.owner ? ' — ' + a.owner : '') + (a.deadline ? ' (' + a.deadline + ')' : ''),
-  }));
-  summarySection(wrap, 'Open questions', data.open_questions, q => el('div', {className: 'meeting-item', textContent: q.text}));
+  const headline = el('section', {className: 'brief-head'}, [
+    el('p', {className: 'brief-kicker', textContent: 'Meeting brief'}),
+    el('p', {className: 'meeting-summary-text', textContent: data.summary}),
+  ]);
+  wrap.appendChild(headline);
+  briefSection(wrap, 'Timeline', data.chapters, chapter => briefItem(
+    {text: chapter.title, evidence: chapter.evidence}, audio, [chapter.summary],
+  ));
+  briefSection(wrap, 'Decisions', data.decisions, decision => briefItem(
+    decision, audio, [decision.rationale && 'Why: ' + decision.rationale, decision.alternatives?.length && 'Alternatives: ' + decision.alternatives.join(' · ')],
+  ));
+  briefSection(wrap, 'Action items', data.action_items, item => briefItem(item, audio, [
+    [item.owner, item.deadline, item.priority && item.priority + ' priority'].filter(Boolean).join(' · '),
+  ]));
+  briefSection(wrap, 'Open questions', data.open_questions, item => briefItem(
+    item, audio, [[item.owner && 'Owner: ' + item.owner, item.deadline && 'By ' + item.deadline].filter(Boolean).join(' · ')],
+  ));
+  briefSection(wrap, 'Risks', data.risks, item => briefItem(item, audio, [item.mitigation && 'Mitigation: ' + item.mitigation]));
+  briefSection(wrap, 'What changed', data.changes_since_last, text => el('article', {className: 'brief-item', textContent: text}));
+  briefSection(wrap, 'Speaker contributions', data.speaker_contributions, person => el('article', {className: 'brief-item'}, [
+    el('div', {className: 'brief-item-text', textContent: person.speaker}),
+    ...[['Committed', person.commitments], ['Proposed', person.decisions_proposed], ['Unanswered', person.unanswered_asks]]
+      .filter(([, values]) => values?.length)
+      .map(([label, values]) => el('p', {className: 'brief-item-detail', textContent: label + ': ' + values.join(' · ')})),
+  ]));
+  if (data.follow_up) wrap.appendChild(el('section', {className: 'brief-section follow-up'}, [
+    el('p', {className: 'brief-label', textContent: 'Follow-up draft'}),
+    el('p', {className: 'brief-item-detail', textContent: data.follow_up}),
+  ]));
 }
 
 function highlightActive(audio) {
@@ -165,8 +208,7 @@ export async function openMeeting(path, wavPath, title) {
       },
     }));
   };
-  renderTranscript(path, meeting.segments, audio);
-  renderSummary(summary);
+  renderSummary(summary, audio);
 
   location.hash = '#meeting';
   showView('meeting');

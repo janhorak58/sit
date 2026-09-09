@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from fastapi import APIRouter
+from ..errors import AppError
 
 from ..asr import diagnose, remote_status
 from ..config import (
@@ -67,6 +68,25 @@ def suggest_folder(req: SuggestReq):
     return {"folder": project}
 
 
+def _previous_context(transcript):
+    """Small, recent comparison context; never includes the meeting being summarized."""
+    summaries = sorted(
+        (path for path in transcript.parent.glob("*.summary.json") if path.stem != f"{transcript.stem}.summary"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )[:3]
+    items = []
+    for path in summaries:
+        try:
+            data = json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
+        summary = str(data.get("summary") or "").strip()
+        if summary:
+            items.append(f"{path.stem.removesuffix('.summary')}: {summary}")
+    return "\n".join(items)
+
+
 @router.post("/summaries")
 def create_summary(req: SummaryReq):
     transcript = resolve_in_data(req.path)
@@ -80,7 +100,7 @@ def create_summary(req: SummaryReq):
             segments = json.loads(meeting_json.read_text()).get("segments")
         except (json.JSONDecodeError, OSError):
             segments = None
-    data = summarize(text, req.project, segments)
+    data = summarize(text, req.project, segments, _previous_context(transcript))
     markdown = render_markdown(data)
     summary_path = transcript.with_name(f"{transcript.stem}.summary.md")
     summary_path.write_text(markdown)
