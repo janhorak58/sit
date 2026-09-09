@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>SHIT — Super-helpful interactive transcriber</title>
-  <meta name="application-name" content="SHIT">
-  <meta name="apple-mobile-web-app-title" content="SHIT">
-  <meta name="description" content="SHIT — Super-helpful interactive transcriber. Recordings, transcripts, and summaries in one place.">
+  <title>SIT — Smart Interactive Transcriber</title>
+  <meta name="application-name" content="SIT">
+  <meta name="apple-mobile-web-app-title" content="SIT">
+  <meta name="description" content="SIT — Smart Interactive Transcriber. Recordings, transcripts, and summaries in one place.">
   <link rel="manifest" href="/static/manifest.json">
   <link rel="icon" href="/static/icons/icon-192.png">
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
@@ -16,7 +16,7 @@
 <body>
 <div class="dashboard-shell">
   <aside class="dashboard-sidebar">
-    <a class="brand" href="#dashboard" aria-label="SHIT — Super-helpful interactive transcriber · Overview"><span class="record-dot" aria-hidden="true"></span><span class="brand-copy"><strong>SHIT</strong><small>Super-helpful interactive<br>transcriber</small></span></a>
+    <a class="brand" href="#dashboard" aria-label="SIT — Smart Interactive Transcriber · Overview"><span class="record-dot" aria-hidden="true"></span><span class="brand-copy"><strong>SIT</strong><small>Smart Interactive<br>Transcriber</small></span></a>
     <nav class="side-nav" aria-label="Main navigation">
       <a href="#dashboard"><span>⌂</span> Overview</a>
       <a class="new-link" href="#new"><span>＋</span> New recording</a>
@@ -134,8 +134,8 @@
             <div class="stage-actions"><button id="to-summary" class="quiet" type="button" disabled>Summary →</button><button id="transcribe" class="primary" type="button">Start transcription →</button></div>
           </div>
           <div id="step-panel-3" class="stage" role="tabpanel" aria-labelledby="step-tab-3" data-stage="3">
-            <div class="stage-copy"><span class="stage-number">03</span><div><h2>Summary</h2><p>Based on the current transcript, and you can regenerate it anytime.</p></div></div>
-            <div class="summary-offer"><div><b>Summary, decisions, and tasks</b><span>The previous summary will be replaced on the next run.</span></div><button id="summarize" class="primary" type="button">Create / regenerate summary</button></div>
+            <div class="stage-copy"><span class="stage-number">03</span><div><h2>Meeting brief</h2><p>Evidence-linked timeline, decisions, tasks, risks, speaker contributions, and follow-up draft.</p></div></div>
+            <div class="summary-offer"><div><b>Create an evidence-grounded brief</b><span>Each claim links back to the recording. Regenerating replaces AI output but keeps nothing inferred as fact.</span></div><button id="summarize" class="primary" type="button">Create / regenerate brief</button></div>
             <p class="status-line" id="summary-status"></p><div class="stage-actions"><a class="quiet action-link" href="#library">Go to library</a><a id="new-recording" class="primary action-link" href="#new">＋ Another recording</a></div>
           </div>
         </section>

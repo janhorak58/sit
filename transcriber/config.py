@@ -11,7 +11,7 @@ _data_home = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "s
 if not _data_home.is_absolute():
     _data_home = Path.home() / ".local" / "share"
 DATA_DIR = Path(
-    os.environ.get("TRANSCRIBER_DATA_DIR") or _data_home / "shit"
+    os.environ.get("TRANSCRIBER_DATA_DIR") or _data_home / "sit"
 ).expanduser().resolve()
 SCRATCH_DIR = DATA_DIR / "_scratch"
 WAV_PATH = SCRATCH_DIR / "current.wav"

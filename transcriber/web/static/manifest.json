@@ -1,7 +1,7 @@
 {
-  "name": "SHIT — Super-helpful interactive transcriber",
-  "short_name": "SHIT",
-  "description": "Super-helpful interactive transcriber — recordings, transcripts, and summaries in one place.",
+  "name": "SIT — Smart Interactive Transcriber",
+  "short_name": "SIT",
+  "description": "Smart Interactive Transcriber — recordings, transcripts, and summaries in one place.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
