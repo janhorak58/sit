@@ -50,6 +50,9 @@ LAUNCHER_PATH = Path.home() / ".local" / "bin" / APP_ID
 DESKTOP_ENTRY_PATH = XDG_DATA_HOME / "applications" / f"{APP_ID}.desktop"
 ICON_PATH = XDG_DATA_HOME / "icons" / f"{APP_ID}.png"
 
+LEGACY_DESKTOP_ENTRY_PATH = XDG_DATA_HOME / "applications" / "transcriber.desktop"
+LEGACY_DESKTOP_EXEC = Path.home() / ".local" / "lib" / "transcriber" / "transcriber-desktop"
+
 COMMENT = (
     "Local tool for meeting transcription and summaries with speaker recognition"
 )
@@ -184,6 +187,29 @@ def check_managed_paths() -> None:
             raise SystemExit(f"Target does not belong to the SHIT installer; leaving unchanged: {path}")
 
 
+def migrate_legacy_desktop_entry() -> None:
+    """Remove only the known ŠIT desktop entry so menu search has one app."""
+    if not LEGACY_DESKTOP_ENTRY_PATH.exists():
+        return
+    if LEGACY_DESKTOP_ENTRY_PATH.is_symlink() or not LEGACY_DESKTOP_ENTRY_PATH.is_file():
+        raise SystemExit(
+            f"Cannot migrate non-file legacy desktop entry: {LEGACY_DESKTOP_ENTRY_PATH}"
+        )
+    legacy = LEGACY_DESKTOP_ENTRY_PATH.read_text(encoding="utf-8", errors="replace")
+    known_entry = (
+        "Name=ŠIT\n" in legacy
+        and f"Exec={LEGACY_DESKTOP_EXEC}\n" in legacy
+        and "Icon=transcriber\n" in legacy
+    )
+    if not known_entry:
+        raise SystemExit(
+            "A legacy transcriber.desktop entry exists but is not the known ŠIT "
+            f"entry; leaving it unchanged: {LEGACY_DESKTOP_ENTRY_PATH}"
+        )
+    LEGACY_DESKTOP_ENTRY_PATH.unlink()
+    print(f"Removed legacy desktop entry: {LEGACY_DESKTOP_ENTRY_PATH}")
+
+
 def install() -> None:
     check_supported_platform()
     check_prerequisites()
@@ -191,6 +217,7 @@ def install() -> None:
     write_launcher()
     write_icon()
     write_desktop_entry()
+    migrate_legacy_desktop_entry()
     print()
     print('Done. Find the app in your application menu as "SHIT", or launch it directly:')
     print(f"  {LAUNCHER_PATH}")

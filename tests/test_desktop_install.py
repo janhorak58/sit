@@ -70,3 +70,23 @@ def test_installer_refuses_to_overwrite_or_uninstall_unrelated_launcher(tmp_path
     assert result.returncode != 0
     assert target.is_symlink()
     assert unrelated.read_text() == "user data"
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux installer")
+def test_installer_replaces_known_legacy_desktop_entry(tmp_path):
+    _, home, _, env, command = prepare_install(tmp_path)
+    legacy = home / "data" / "applications" / "transcriber.desktop"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text(
+        "[Desktop Entry]\n"
+        "Type=Application\n"
+        "Name=ŠIT\n"
+        f"Exec={home / '.local/lib/transcriber/transcriber-desktop'}\n"
+        "Icon=transcriber\n",
+        encoding="utf-8",
+    )
+
+    subprocess.run(command, env=env, cwd="/", check=True, capture_output=True)
+
+    assert not legacy.exists()
+    assert "Name=SHIT\n" in (home / "data" / "applications" / "shit.desktop").read_text()
