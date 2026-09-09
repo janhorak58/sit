@@ -151,7 +151,7 @@ def summarize(text, project="", segments=None):
     dict carrying the raw response as ``summary`` rather than raising.
     """
     if not OMNIROUTE_URL:
-        raise AppError("Souhrny nejsou nakonfigurované.")
+        raise AppError("Summaries are not configured.")
     context = f"Project: {project}\n\n" if project else ""
     transcript = _transcript_lines(text, segments)
     headers = {"Authorization": f"Bearer {GPT_OSS_API_KEY}"} if GPT_OSS_API_KEY else None
@@ -173,7 +173,7 @@ def summarize(text, project="", segments=None):
         response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"]
     except (httpx.HTTPError, KeyError, ValueError) as exc:
-        raise AppError(f"Souhrn se nepodařilo vytvořit: {exc}") from exc
+        raise AppError(f"Failed to generate summary: {exc}") from exc
 
     parsed = _extract_json(content)
     if not isinstance(parsed, dict):

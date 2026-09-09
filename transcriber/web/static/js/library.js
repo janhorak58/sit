@@ -23,9 +23,9 @@ async function viewItem(item) {
 }
 
 async function deletePath(path, label) {
-  if (!confirm('Opravdu smazat ' + label + '?')) return;
+  if (!confirm('Really delete ' + label + '?')) return;
   const result = await api.remove(path);
-  if (result.error) { alert('Chyba: ' + result.error); return; }
+  if (result.error) { alert('Error: ' + result.error); return; }
   loadLibrary();
   window.dispatchEvent(new Event('transcriber:library-changed'));
 }
@@ -60,11 +60,11 @@ function updateRecentItem(folder, oldName, newFolder, newName) {
 }
 
 async function renameFolder(name) {
-  const next = prompt('Nový název složky:', name);
+  const next = prompt('New folder name:', name);
   if (!next || next === name) return;
   const oldPath = childPath(name);
   const result = await api.renameFolder(oldPath, next.trim());
-  if (result.error) { alert('Chyba: ' + result.error); return; }
+  if (result.error) { alert('Error: ' + result.error); return; }
   remapWorkspaceFolder(oldPath, result.folder);
   updateRecentFolder(oldPath, result.folder);
   loadLibrary();
@@ -73,9 +73,9 @@ async function renameFolder(name) {
 
 async function deleteFolder(name) {
   const path = childPath(name);
-  if (!confirm(`Smazat složku „${name}“ včetně všech nahrávek, přepisů a souhrnů?`)) return;
+  if (!confirm(`Delete folder "${name}" including all recordings, transcripts, and summaries?`)) return;
   const result = await api.deleteFolder(path);
-  if (result.error) { alert('Chyba: ' + result.error); return; }
+  if (result.error) { alert('Error: ' + result.error); return; }
   clearWorkspaceWithin(path);
   updateRecentFolder(path);
   loadLibrary();
@@ -99,10 +99,10 @@ export function openFolder(folder) {
 }
 
 export async function createFolder() {
-  const name = prompt('Název nové složky:');
+  const name = prompt('New folder name:');
   if (!name) return;
   const result = await api.mkdir(childPath(name));
-  if (result.error) { alert('Chyba: ' + result.error); return; }
+  if (result.error) { alert('Error: ' + result.error); return; }
   loadLibrary();
   window.dispatchEvent(new Event('transcriber:library-changed'));
 }
@@ -110,7 +110,7 @@ export async function createFolder() {
 function renderCrumbs() {
   const wrap = $('crumbs');
   wrap.replaceChildren();
-  const root = el('button', {className: 'crumb', textContent: 'Knihovna'});
+  const root = el('button', {className: 'crumb', textContent: 'Library'});
   root.onclick = () => openFolder('');
   wrap.appendChild(root);
   const parts = state.currentFolder ? state.currentFolder.split('/') : [];
@@ -128,18 +128,18 @@ function renderCrumbs() {
 function renderFolder(name) {
   const open = el('button', {className: 'folder-card', type: 'button'}, [
     el('span', {className: 'folder-mark', textContent: '↳'}),
-    el('span', {className: 'folder-copy'}, [el('b', {textContent: name}), el('small', {textContent: 'Otevřít složku'})]),
+    el('span', {className: 'folder-copy'}, [el('b', {textContent: name}), el('small', {textContent: 'Open folder'})]),
     el('span', {className: 'folder-arrow', textContent: '→'}),
   ]);
   open.onclick = () => openFolder(childPath(name));
 
   const more = el('details', {className: 'item-more folder-more'});
-  const trigger = el('summary', {textContent: '•••', title: `Akce složky ${name}`});
-  trigger.setAttribute('aria-label', `Akce složky ${name}`);
+  const trigger = el('summary', {textContent: '•••', title: `Actions for folder ${name}`});
+  trigger.setAttribute('aria-label', `Actions for folder ${name}`);
   const menu = el('div', {className: 'item-menu'});
-  const rename = el('button', {className: 'menu-action', type: 'button', textContent: 'Přejmenovat'});
+  const rename = el('button', {className: 'menu-action', type: 'button', textContent: 'Rename'});
   rename.onclick = () => renameFolder(name);
-  const remove = el('button', {className: 'danger-action', type: 'button', textContent: 'Smazat složku'});
+  const remove = el('button', {className: 'danger-action', type: 'button', textContent: 'Delete folder'});
   remove.onclick = () => deleteFolder(name);
   menu.append(rename, remove);
   more.append(trigger, menu);
@@ -153,7 +153,7 @@ function renderItem(item) {
     el('span', {className: 'item-icon', textContent: item.txt ? 'TXT' : 'WAV'}),
     el('span', {className: 'item-copy'}, [
       el('b', {textContent: item.name}),
-      el('small', {textContent: item.txt ? (item.summary ? 'Přepis · souhrn' : 'Přepis bez souhrnu') : 'Nahrávka čeká na přepis'}),
+      el('small', {textContent: item.txt ? (item.summary ? 'Transcript · summary' : 'Transcript without summary') : 'Recording awaiting transcription'}),
     ]),
   );
   open.disabled = !item.txt;
@@ -161,34 +161,34 @@ function renderItem(item) {
 
   const actions = el('div', {className: 'item-actions'});
   if (item.wav) {
-    const edit = el('button', {className: 'small accent', type: 'button', textContent: 'Upravit'});
+    const edit = el('button', {className: 'small accent', type: 'button', textContent: 'Edit'});
     edit.onclick = () => openRecordingWorkspace(item.wav_path, item.name, item.txt);
     actions.appendChild(edit);
   }
 
   const more = el('details', {className: 'item-more'});
-  const trigger = el('summary', {textContent: '•••', title: `Akce meetingu ${item.name}`});
-  trigger.setAttribute('aria-label', `Akce meetingu ${item.name}`);
+  const trigger = el('summary', {textContent: '•••', title: `Actions for meeting ${item.name}`});
+  trigger.setAttribute('aria-label', `Actions for meeting ${item.name}`);
   const menu = el('div', {className: 'item-menu'});
-  const move = el('button', {className: 'menu-action', type: 'button', textContent: 'Přesunout'});
+  const move = el('button', {className: 'menu-action', type: 'button', textContent: 'Move'});
   move.onclick = () => {
     more.open = false;
     openMoveDialog(item);
   };
   menu.appendChild(move);
   if (item.txt) {
-    const del = el('button', {className: 'danger-action', type: 'button', textContent: 'Smazat přepis'});
-    del.onclick = () => deletePath(childPath(item.name) + '.txt', 'přepis');
+    const del = el('button', {className: 'danger-action', type: 'button', textContent: 'Delete transcript'});
+    del.onclick = () => deletePath(childPath(item.name) + '.txt', 'transcript');
     menu.appendChild(del);
   }
   if (item.summary) {
-    const del = el('button', {className: 'danger-action', type: 'button', textContent: 'Smazat souhrn'});
-    del.onclick = () => deletePath(item.summary_path, 'souhrn');
+    const del = el('button', {className: 'danger-action', type: 'button', textContent: 'Delete summary'});
+    del.onclick = () => deletePath(item.summary_path, 'summary');
     menu.appendChild(del);
   }
   if (item.wav) {
-    const del = el('button', {className: 'danger-action', type: 'button', textContent: 'Smazat nahrávku'});
-    del.onclick = () => deletePath(item.wav_path, 'nahrávku');
+    const del = el('button', {className: 'danger-action', type: 'button', textContent: 'Delete recording'});
+    del.onclick = () => deletePath(item.wav_path, 'recording');
     menu.appendChild(del);
   }
   more.append(trigger, menu);
@@ -198,23 +198,23 @@ function renderItem(item) {
 }
 
 function renderListing(query = '') {
-  const needle = query.trim().toLocaleLowerCase('cs');
-  const folders = listing.subfolders.filter(name => name.toLocaleLowerCase('cs').includes(needle));
-  const items = listing.items.filter(item => item.name.toLocaleLowerCase('cs').includes(needle));
+  const needle = query.trim().toLocaleLowerCase('en');
+  const folders = listing.subfolders.filter(name => name.toLocaleLowerCase('en').includes(needle));
+  const items = listing.items.filter(item => item.name.toLocaleLowerCase('en').includes(needle));
   const wrap = $('library');
   wrap.replaceChildren();
   if (!folders.length && !items.length) {
-    wrap.appendChild(el('div', {className: 'empty library-empty', textContent: needle ? 'Nic takového v této složce není.' : 'Tato složka je prázdná.'}));
+    wrap.appendChild(el('div', {className: 'empty library-empty', textContent: needle ? 'Nothing like that in this folder.' : 'This folder is empty.'}));
     return;
   }
   if (folders.length) {
-    wrap.appendChild(el('p', {className: 'browser-label', textContent: 'Složky'}));
+    wrap.appendChild(el('p', {className: 'browser-label', textContent: 'Folders'}));
     const grid = el('div', {className: 'folder-grid'});
     folders.forEach(name => grid.appendChild(renderFolder(name)));
     wrap.appendChild(grid);
   }
   if (items.length) {
-    wrap.appendChild(el('p', {className: 'browser-label', textContent: 'Meetingy'}));
+    wrap.appendChild(el('p', {className: 'browser-label', textContent: 'Meetings'}));
     const list = el('div', {className: 'item-list'});
     items.forEach(item => list.appendChild(renderItem(item)));
     wrap.appendChild(list);
@@ -226,7 +226,7 @@ export async function loadLibrary() {
   const data = await api.browse(state.currentFolder);
   if (data.error) {
     listing = {subfolders: [], items: []};
-    $('library').replaceChildren(el('div', {className: 'empty library-empty', textContent: 'Složku se nepodařilo načíst: ' + data.error}));
+    $('library').replaceChildren(el('div', {className: 'empty library-empty', textContent: 'Failed to load folder: ' + data.error}));
     return;
   }
   listing = data;
@@ -238,12 +238,12 @@ export async function loadDashboard() {
   const projectWrap = $('dashboard-projects');
   projectWrap.replaceChildren();
   if (!projects.length) {
-    projectWrap.appendChild(el('a', {className: 'empty-project', href: '#new', textContent: 'Zatím bez projektů — založit první meeting →'}));
+    projectWrap.appendChild(el('a', {className: 'empty-project', href: '#new', textContent: 'No projects yet — create your first meeting →'}));
   } else {
     projects.forEach(name => {
       const button = el('button', {className: 'project-card', type: 'button'}, [
         el('span', {textContent: name.slice(0, 2).toUpperCase()}),
-        el('div', {}, [el('b', {textContent: name}), el('small', {textContent: 'Otevřít projekt'})]),
+        el('div', {}, [el('b', {textContent: name}), el('small', {textContent: 'Open project'})]),
         el('i', {textContent: '→'}),
       ]);
       button.onclick = () => openFolder(name);
@@ -259,7 +259,7 @@ export async function loadDashboard() {
   recent.forEach(entry => {
     const button = el('button', {className: 'recent-item', type: 'button'}, [
       el('span', {className: 'item-icon', textContent: 'TXT'}),
-      el('span', {className: 'item-copy'}, [el('b', {textContent: entry.title}), el('small', {textContent: entry.folder || 'Knihovna'})]),
+      el('span', {className: 'item-copy'}, [el('b', {textContent: entry.title}), el('small', {textContent: entry.folder || 'Library'})]),
       el('span', {textContent: '→'}),
     ]);
     button.onclick = () => { state.currentFolder = entry.folder || ''; openMeeting(entry.path, entry.wavPath, entry.title); };
@@ -273,7 +273,7 @@ export function initLibrary() {
   window.addEventListener('transcriber:rename-meeting', event => {
     const {folder, name, wavPath, onSuccess} = event.detail;
     moveTarget = {folder, name, wav_path: wavPath, onSuccess};
-    $('move-title').textContent = 'Přejmenovat meeting';
+    $('move-title').textContent = 'Rename meeting';
     $('move-folder').parentElement.hidden = true;
     $('move-folder').value = folder;
     $('move-name').value = name;
@@ -291,7 +291,7 @@ export function initLibrary() {
     const toFolder = $('move-folder').value.trim();
     const toName = $('move-name').value.trim();
     const result = await api.move(moveTarget.folder, moveTarget.name, toFolder, toName, moveTarget.wav_path);
-    if (result.error) { alert('Chyba: ' + result.error); return; }
+    if (result.error) { alert('Error: ' + result.error); return; }
     const finished = moveTarget;
     $('move-dialog').close();
     moveTarget = null;

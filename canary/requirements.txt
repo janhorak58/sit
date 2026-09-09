@@ -1,0 +1,14 @@
+# Runtime closure for the Canary ONNX service. onnxruntime-gpu must match the
+# base image's CUDA / cuDNN libraries; changing the image means rechecking
+# https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html
+# 1.29 links CUDA 13 / cuDNN 9 and is the only release with a linux aarch64 GPU
+# wheel, which the GB10 (Grace Blackwell, sm_121) host needs; the base image is
+# pinned to CUDA 13 to match. The Dockerfile fails the build if the CUDA
+# provider cannot resolve its shared libraries.
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+python-multipart==0.0.32
+onnx-asr==0.12.0
+onnxruntime-gpu==1.29.0
+huggingface-hub==1.30.0
+numpy==2.4.6

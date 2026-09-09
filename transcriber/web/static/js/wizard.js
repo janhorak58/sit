@@ -4,6 +4,10 @@ import {elapsedSeconds, initRecording, recording, setRecording} from './recordin
 import {setWorkspace, state, updateWorkspacePaths, workspaceFromPath} from './state.js';
 import {transcribePath, watchProgress} from './transcribe.js';
 
+const LIVE_TOGGLE_KEY = 'shit.live-enabled';
+function loadLiveToggle() {
+  return localStorage.getItem(LIVE_TOGGLE_KEY) !== '0';
+}
 let suggestedFolder = '';
 let unlockedStep = 1;
 let suggestionRequest = 0;
@@ -26,16 +30,20 @@ function unlockThrough(step) {
 }
 
 function setSourceState(hasRecording) {
-  $('source-locked').hidden = !hasRecording;
-  $('source-choices').hidden = hasRecording;
-  $('source-status').hidden = hasRecording;
+  const pending = recording.active || recording.available;
+  const hideStarters = hasRecording || pending;
+  $('source-locked').hidden = !hasRecording || pending;
+  $('source-choices').hidden = hideStarters;
+  $('source-status').hidden = hideStarters;
+  $('record-lang-field').hidden = hideStarters;
+  $('live-toggle-field').hidden = hideStarters;
 }
 
 function setTranscriptActions(hasTranscript) {
   $('diarize').disabled = !hasTranscript;
   $('to-summary').disabled = !hasTranscript;
   $('workspace-view-mode').disabled = !hasTranscript;
-  $('workspace-view-mode').title = hasTranscript ? 'Otevřít hotový přepis' : 'Prohlížení bude dostupné po přepisu';
+  $('workspace-view-mode').title = hasTranscript ? 'Open the finished transcript' : 'Viewing will be available after transcription';
 }
 
 function setBadge(data) {
@@ -55,9 +63,9 @@ function renamedPath(path, name) {
 
 function defaultRecordingName() {
   const now = new Date();
-  const date = now.toLocaleDateString('cs-CZ', {day: 'numeric', month: 'numeric', year: 'numeric'});
-  const time = now.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute: '2-digit'});
-  return `Nahrávka ${date} ${time}`;
+  const date = now.toLocaleDateString('en-US', {day: 'numeric', month: 'numeric', year: 'numeric'});
+  const time = now.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'});
+  return `Recording ${date} ${time}`;
 }
 
 const NEW_PROJECT = '__new__';
@@ -88,8 +96,8 @@ function projectTile(name, label, hint) {
 
 function renderProjects(projects) {
   $('project-picker').replaceChildren(
-    ...projects.map(name => projectTile(name, name, 'Existující projekt')),
-    projectTile(NEW_PROJECT, '＋ Nový projekt', 'Založí novou složku'),
+    ...projects.map(name => projectTile(name, name, 'Existing project')),
+    projectTile(NEW_PROJECT, '＋ New project', 'Creates a new folder'),
   );
   const selected = $('project').value;
   if (selected && projects.includes(selected)) selectProject(selected);
@@ -99,7 +107,7 @@ function renderProjects(projects) {
       link.onclick = event => { event.preventDefault(); openLibrary(name); };
       return link;
     })
-    : [Object.assign(document.createElement('span'), {className: 'side-empty', textContent: 'Zatím bez projektů'})]));
+    : [Object.assign(document.createElement('span'), {className: 'side-empty', textContent: 'No projects yet'})]));
 }
 
 async function refreshProjects() {
@@ -131,10 +139,10 @@ function applyWorkspace() {
   const workspace = state.workspace;
   if (!workspace) return false;
   $('workspace-title').textContent = workspace.name;
-  $('workspace-path').textContent = workspace.folder || 'Kořen knihovny';
-  $('stored-path').textContent = workspace.path ? `Uloženo jako ${workspace.path}.` : 'Nahrávka se uloží do této složky.';
-  $('transcribe').textContent = workspace.transcriptPath ? 'Spustit přepis znovu →' : 'Spustit přepis →';
-  $('summarize').textContent = 'Vytvořit / přegenerovat souhrn';
+  $('workspace-path').textContent = workspace.folder || 'Library root';
+  $('stored-path').textContent = workspace.path ? `Saved as ${workspace.path}.` : 'The recording will be saved into this folder.';
+  $('transcribe').textContent = workspace.transcriptPath ? 'Restart transcription →' : 'Start transcription →';
+  $('summarize').textContent = 'Create / regenerate summary';
   setSourceState(Boolean(workspace.path));
   setTranscriptActions(Boolean(workspace.transcriptPath));
   unlockedStep = workspace.transcriptPath ? 3 : workspace.path ? 2 : 1;
@@ -146,10 +154,14 @@ function resetWorkspaceView() {
   unlockedStep = 1;
   $('audiofile').value = '';
   $('source-status').hidden = false;
-  $('source-status').textContent = 'Připraveno přijmout nahrávku.';
-  $('status').textContent = 'Připraveno k přepisu.';
+  $('source-status').textContent = 'Ready to receive a recording.';
+  $('status').textContent = 'Ready to transcribe.';
   $('summary-status').textContent = '';
   $('fill').style.width = '0%';
+  $('record-lang').value = 'cs';
+  $('record-lang').disabled = false;
+  $('live-toggle').checked = loadLiveToggle();
+  $('live-toggle').disabled = false;
   setSourceState(false);
   setTranscriptActions(false);
   go(1);
@@ -159,39 +171,135 @@ function stored(path) {
   updateWorkspacePaths(path, null);
   setSourceState(true);
   setTranscriptActions(false);
-  $('stored-path').textContent = `Uloženo jako ${path}.`;
+  $('stored-path').textContent = `Saved as ${path}.`;
   unlockThrough(2);
   go(2);
   window.dispatchEvent(new Event('transcriber:library-changed'));
 }
 
+function formatTime(seconds) {
+  const s = Math.max(0, Math.floor(seconds || 0));
+  return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+}
+
+const LIVE_STATE_LABEL = {
+  idle: 'Ready to listen.',
+  listening: 'Listening…',
+  transcribing: 'Transcribing the recorded segment…',
+  error: 'Live transcription failed.',
+  stopped: 'Recording finished.',
+};
+
+const EMPTY_DRAFT_HINT = 'Listening… the first transcript will appear in a few seconds.';
+
+function isNearBottom(node) {
+  return node.scrollHeight - node.scrollTop - node.clientHeight < 48;
+}
+
+function sameSeg(a, b) {
+  return a.start === b.start && a.end === b.end && a.text === b.text;
+}
+
+function segRow(seg) {
+  return el('div', {className: 'segrow'}, [
+    el('span', {className: 'segtime', textContent: formatTime(seg.start)}),
+    el('span', {className: 'segtext', textContent: seg.text}),
+  ]);
+}
+
+let renderedDraft = [];
+
+/**
+ * Patches the transcript DOM instead of rebuilding it every tick: unchanged
+ * content is a no-op, a growing tail patches the last row and appends new
+ * ones, and only a genuinely different history (new/reset session) rebuilds.
+ */
+function renderDraftSegments(segments, provisionalLast) {
+  const wrap = $('live-draft-segments');
+  const unchanged = segments === renderedDraft || (
+    segments.length === renderedDraft.length && segments.every((seg, index) => sameSeg(seg, renderedDraft[index]))
+  );
+  if (unchanged && wrap.childElementCount > 0) {
+    if (wrap.lastElementChild?.classList.contains('segrow')) wrap.lastElementChild.classList.toggle('is-provisional', Boolean(provisionalLast));
+    return;
+  }
+  const stick = isNearBottom(wrap);
+  const prevLen = renderedDraft.length;
+  const sameHead = prevLen > 0 && segments.length >= prevLen
+    && segments.slice(0, prevLen - 1).every((seg, index) => sameSeg(seg, renderedDraft[index]));
+  renderedDraft = segments;
+  if (!segments.length) {
+    wrap.replaceChildren(el('div', {className: 'empty', textContent: EMPTY_DRAFT_HINT}));
+  } else if (sameHead) {
+    wrap.lastElementChild?.classList.remove('is-provisional');
+    const lastRow = wrap.children[prevLen - 1];
+    if (lastRow) {
+      lastRow.querySelector('.segtime').textContent = formatTime(segments[prevLen - 1].start);
+      lastRow.querySelector('.segtext').textContent = segments[prevLen - 1].text;
+    }
+    for (let i = prevLen; i < segments.length; i++) wrap.appendChild(segRow(segments[i]));
+  } else {
+    wrap.replaceChildren(...segments.map(segRow));
+  }
+  if (segments.length) wrap.lastElementChild.classList.toggle('is-provisional', Boolean(provisionalLast));
+  if (stick) wrap.scrollTop = wrap.scrollHeight;
+  $('jump-latest').hidden = stick || !segments.length;
+}
+
+/** A saved session must not leak its draft or language into another workspace. */
+function syncLiveDraft() {
+  const live = recording.live;
+  const visible = recording.active || recording.available;
+  if (!visible) return;
+  const provisional = ['listening', 'transcribing'].includes(live.state);
+  let message = LIVE_STATE_LABEL[live.state] || '';
+  const lag = Math.max(0, Math.round(live.audio_seconds - live.processed_seconds));
+  if (provisional && lag > 5) message += ` (${lag}s behind)`;
+  if (live.error) message += live.state === 'error' ? ` ${live.error}` : ' (temporary transcription error, continuing)';
+  $('live-draft-status').textContent = message;
+  $('record-session').classList.toggle('is-error', live.state === 'error');
+  renderDraftSegments(live.segments, provisional);
+  $('record-transcript').hidden = !live.session_id;
+  if (live.session_id) {
+    $('record-lang').value = live.language;
+    $('lang').value = live.language;
+  }
+}
+
 function syncRecordingPanel() {
-  const live = $('recording-live');
-  const limitReached = recording.maxSeconds && elapsedSeconds() >= recording.maxSeconds;
-  live.hidden = !recording.active;
-  $('start').disabled = recording.active;
-  if (!recording.active) return;
-  live.querySelector('b').textContent = limitReached
-    ? 'Nahrávání ukončeno (dosažen limit)'
-    : 'Nahrávání běží';
-  const seconds = elapsedSeconds();
-  $('timer').textContent =
-    String(Math.floor(seconds / 60)).padStart(2, '0') + ':' + String(seconds % 60).padStart(2, '0');
+  const session = $('record-session');
+  const pending = recording.active || recording.available;
+  const limitReached = recording.maxSeconds && recording.active && elapsedSeconds() >= recording.maxSeconds;
+  $('step-panel-1').querySelector('.stage-copy').hidden = pending;
+  session.hidden = !pending;
+  session.classList.toggle('is-waiting', pending && !recording.active);
+  setSourceState(Boolean(state.workspace?.path));
+  $('start').disabled = pending;
+  $('record-lang').disabled = pending;
+  $('live-toggle').disabled = pending;
+  if (pending) {
+    $('record-toolbar-label').textContent = !recording.active
+      ? 'Recording finished, waiting to save'
+      : limitReached ? 'Recording finished (limit reached)' : 'Recording in progress';
+    const seconds = recording.active ? elapsedSeconds() : recording.live.audio_seconds;
+    $('timer').textContent = formatTime(seconds);
+    syncLiveDraft();
+  }
 }
 
 function transcriptionDone(result) {
   updateWorkspacePaths(state.currentPath, result.saved_path);
-  setBadge({available: result.backend === 'spark', label: result.backend === 'spark' ? 'Pracovní Spark' : 'Lokální model'});
+  setBadge({available: result.backend === 'spark', label: result.backend === 'spark' ? 'Remote Spark' : 'Local model'});
   unlockThrough(3);
   setTranscriptActions(true);
   go(result.operation === 'diarize' ? 2 : 3);
-  $('transcribe').textContent = 'Spustit přepis znovu →';
-  $('summarize').textContent = 'Vytvořit / přegenerovat souhrn';
+  $('transcribe').textContent = 'Restart transcription →';
+  $('summarize').textContent = 'Create / regenerate summary';
   window.dispatchEvent(new Event('transcriber:library-changed'));
 }
 
 
-/** Entering "Nová nahrávka": fresh default name, last-used project preselected. */
+/** Entering "New recording": fresh default name, last-used project preselected. */
 export async function prepareNewRecording() {
   $('filename').value = defaultRecordingName();
   $('new-project').value = '';
@@ -203,14 +311,23 @@ export async function prepareNewRecording() {
   if (!existing.length) { selectProject(NEW_PROJECT); return; }
   selectProject(existing.some(tile => tile.dataset.project === last) ? last : null);
 }
-
 export function initWizard() {
   document.querySelectorAll('.step').forEach(button => {
     button.onclick = () => go(Number(button.dataset.step));
   });
-  api.asrStatus().then(setBadge).catch(() => setBadge({available: false, label: 'Lokální model'}));
+  $('live-toggle').checked = loadLiveToggle();
+  api.asrStatus().then(setBadge).catch(() => setBadge({available: false, label: 'Local model'}));
   refreshProjects();
   applyWorkspace();
+  $('live-draft-segments').addEventListener('scroll', () => {
+    const wrap = $('live-draft-segments');
+    $('jump-latest').hidden = $('record-session').hidden || isNearBottom(wrap) || !wrap.querySelector('.segrow');
+  });
+  $('jump-latest').onclick = () => {
+    const wrap = $('live-draft-segments');
+    wrap.scrollTop = wrap.scrollHeight;
+    $('jump-latest').hidden = true;
+  };
 
   $('new-project').addEventListener('input', updateSuggestion);
   $('filename').addEventListener('input', updateSuggestion);
@@ -220,18 +337,18 @@ export function initWizard() {
     const project = chosenProject();
     const name = $('filename').value.trim();
     const folder = suggestedFolder;
-    if (!project) { alert('Vyber projekt, nebo založ nový.'); return; }
+    if (!project) { alert('Pick a project, or create a new one.'); return; }
     if (!name || !folder) return;
     $('create-workspace').disabled = true;
     const existing = await api.browse(folder);
     if (!existing.error) {
       $('create-workspace').disabled = false;
-      alert('Nahrávka s tímto názvem už v projektu je. Zvol jiný název, nebo ji otevři v knihovně.');
+      alert('A recording with this name already exists in the project. Choose a different name, or open it in the library.');
       return;
     }
     const result = await api.mkdir(folder);
     $('create-workspace').disabled = false;
-    if (result.error) { alert('Chyba: ' + result.error); return; }
+    if (result.error) { alert('Error: ' + result.error); return; }
     setWorkspace({project, folder: result.folder || folder, name});
     resetWorkspaceView();
     $('workspace-title').textContent = name;
@@ -266,15 +383,17 @@ export function initWizard() {
   $('to-transcript').onclick = () => go(2);
   $('start').onclick = async () => {
     $('start').disabled = true;
-    const result = await api.startRecording();
-    if (result.error) { $('start').disabled = false; alert('Chyba: ' + result.error); return; }
+    const result = await api.startRecording($('record-lang').value, $('live-toggle').checked);
+    if (result.error) { $('start').disabled = false; alert('Error: ' + result.error); return; }
     setRecording(true);
   };
+  $('live-toggle').onchange = () => localStorage.setItem(LIVE_TOGGLE_KEY, $('live-toggle').checked ? '1' : '0');
   $('cancel-record').onclick = async () => {
-    if (!confirm('Opravdu zrušit nahrávání? Záznam se nezachová.')) return;
+    if (!confirm('Really cancel the recording? The take will not be kept.')) return;
     $('cancel-record').disabled = true;
-    await api.cancelRecording();
+    const result = await api.cancelRecording();
     $('cancel-record').disabled = false;
+    if (result.error) { alert('Error: ' + result.error); return; }
     setRecording(false);
   };
   $('stop').onclick = async () => {
@@ -282,31 +401,36 @@ export function initWizard() {
     $('stop').disabled = true;
     const result = await api.stopRecording(state.workspace.folder, state.workspace.name);
     $('stop').disabled = false;
-    if (result.error) { alert('Chyba: ' + result.error); return; }
+    if (result.error) { alert('Error: ' + result.error); return; }
+    // The live session's chosen language carries over into the automatic
+    // full pass, even though setRecording(false) below resets the draft.
+    const language = recording.live.session_id ? recording.live.language : $('record-lang').value;
     setRecording(false);
     stored(result.path);
+    $('lang').value = language;
+    transcribePath(result.path);
   };
   $('audiofile').onchange = async () => {
     const file = $('audiofile').files[0];
     if (!file || !state.workspace) return;
     $('audiofile').disabled = true;
-    $('source-status').textContent = 'Nahrávám a převádím soubor…';
+    $('source-status').textContent = 'Uploading and converting the file…';
     const result = await api.uploadAudio(file, state.workspace.folder, state.workspace.name);
     $('audiofile').disabled = false;
-    if (result.error) { $('source-status').textContent = 'Chyba: ' + result.error; return; }
+    if (result.error) { $('source-status').textContent = 'Error: ' + result.error; return; }
     stored(result.path);
   };
   $('transcribe').onclick = () => {
     if (!state.currentPath) return;
-    if (state.transcriptPath && !confirm('Stávající přepis i rozpoznání mluvčích se nahradí. Pokračovat?')) return;
+    if (state.transcriptPath && !confirm('The existing transcript and speaker recognition will be replaced. Continue?')) return;
     transcribePath(state.currentPath);
   };
   $('diarize').onclick = async () => {
     if (!state.currentPath || !state.transcriptPath) return;
-    if (!confirm('Dosavadní přiřazení a názvy mluvčích se nahradí. Pokračovat?')) return;
+    if (!confirm('The existing speaker assignments and names will be replaced. Continue?')) return;
     const n = parseInt($('numspeakers').value, 10);
     const started = await api.diarize(state.currentPath, Number.isInteger(n) ? n : null);
-    if (started.error) { $('status').textContent = 'Chyba: ' + started.error; return; }
+    if (started.error) { $('status').textContent = 'Error: ' + started.error; return; }
     watchProgress();
   };
   $('to-summary').onclick = () => go(3);
@@ -326,12 +450,12 @@ export function initWizard() {
   $('summarize').onclick = async () => {
     if (!state.transcriptPath) return;
     $('summarize').disabled = true;
-    $('summary-status').textContent = 'Připravuji souhrn…';
+    $('summary-status').textContent = 'Preparing summary…';
     const result = await api.summarize(state.transcriptPath, state.workspace?.project || '');
     $('summarize').disabled = false;
-    if (result.error) { $('summary-status').textContent = 'Chyba: ' + result.error; return; }
-    $('summary-status').textContent = 'Souhrn byl obnoven. Výsledek otevřeš v režimu Prohlížet.';
-    $('summarize').textContent = 'Vytvořit / přegenerovat souhrn';
+    if (result.error) { $('summary-status').textContent = 'Error: ' + result.error; return; }
+    $('summary-status').textContent = 'Summary restored. Open it in View mode.';
+    $('summarize').textContent = 'Create / regenerate summary';
     window.dispatchEvent(new Event('transcriber:library-changed'));
   };
   window.addEventListener('transcriber:library-changed', refreshProjects);
@@ -343,7 +467,7 @@ export function initWizard() {
     location.hash = '#workspace';
     go(1);
   }).then(() => {
-    if (recording.active && state.workspace) {
+    if ((recording.active || recording.available) && state.workspace) {
       applyWorkspace();
       location.hash = '#workspace';
       unlockedStep = 1;

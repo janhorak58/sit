@@ -1,26 +1,41 @@
-// Single source of truth for "is a recording running right now".
-// One poller drives both the sidebar indicator (visible in every view) and the
-// recording panel inside the workspace, so the two can never disagree.
+// Single source of truth for "is a recording running right now", plus the
+// near-real-time draft transcription session that runs alongside it. One
+// poller drives the sidebar indicator (visible in every view) and the
+// recording/draft panel inside the workspace, so none of them can disagree.
 
 import * as api from './api.js';
 import {$} from './dom.js';
 
-const ACTIVE_INTERVAL = 1000;
+const ACTIVE_INTERVAL = 250;
 const IDLE_INTERVAL = 5000;
 
-export const recording = {active: false, startedAt: null, maxSeconds: null};
+function defaultLive() {
+  return {session_id: null, state: 'idle', segments: [], audio_seconds: 0, processed_seconds: 0, error: null, language: ''};
+}
+
+export const recording = {active: false, startedAt: null, maxSeconds: null, available: false, live: defaultLive()};
 
 let timerId = null;
+// Requests can resolve out of order (slow poll from a session that has since
+// been cancelled/restarted). `token` is bumped per dispatch, `appliedToken`
+// tracks the newest response actually applied; anything older is dropped.
+let token = 0;
+let appliedToken = 0;
 
 function clock(seconds) {
-  const safe = Math.max(0, seconds);
-  return String(Math.floor(safe / 60)).padStart(2, '0') + ':' + String(safe % 60).padStart(2, '0');
+  const safe = Math.max(0, Math.floor(seconds));
+  return String(Math.floor(safe / 60)).padStart(2, '0') + ':' + String(Math.floor(safe % 60)).padStart(2, '0');
 }
 
 export function elapsedSeconds() {
   if (!recording.startedAt) return 0;
   const seconds = Math.floor((Date.now() - recording.startedAt) / 1000);
   return recording.maxSeconds ? Math.min(seconds, recording.maxSeconds) : seconds;
+}
+
+/** Is there any session-in-progress state worth fast-polling and showing? */
+function isLive() {
+  return recording.active || recording.available || recording.live.state === 'listening' || recording.live.state === 'transcribing';
 }
 
 function render() {
@@ -31,45 +46,85 @@ function render() {
 
 function publish() {
   render();
-  window.dispatchEvent(new CustomEvent('transcriber:recording-changed', {detail: {...recording}}));
+  window.dispatchEvent(new CustomEvent('transcriber:recording-changed', {detail: {...recording, live: {...recording.live}}}));
 }
 
-/** Reflect a locally known transition immediately, without waiting for a poll. */
+function normalizeLive(live) {
+  return {
+    session_id: live?.session_id ?? null,
+    state: live?.state || 'idle',
+    segments: Array.isArray(live?.segments) ? live.segments : [],
+    audio_seconds: Number(live?.audio_seconds) || 0,
+    processed_seconds: Number(live?.processed_seconds) || 0,
+    error: live?.error ?? null,
+    language: live?.language ?? '',
+  };
+}
+
+/**
+ * Reflect a locally known transition immediately, without waiting for a poll.
+ * Used for start/cancel/stop: each one ends whatever session came before, so
+ * the draft is reset and any in-flight status response for the old session
+ * is invalidated (it can never resurrect stale text after this call).
+ */
 export function setRecording(active, startedAt = Date.now()) {
   recording.active = active;
   recording.startedAt = active ? startedAt : null;
+  recording.available = false;
+  recording.live = defaultLive();
+  appliedToken = token;
   publish();
   schedule();
 }
 
+let polling = false;
+
 async function poll() {
-  const status = await api.recordingStatus();
-  if (status.error) return;
-  const changed = status.recording !== recording.active;
-  recording.active = Boolean(status.recording);
-  recording.startedAt = status.recording ? status.started_at : null;
-  recording.maxSeconds = status.max_seconds ?? recording.maxSeconds;
-  if (changed) {
+  if (polling) return;
+  polling = true;
+  const myToken = ++token;
+  try {
+    const status = await api.recordingStatus();
+    if (myToken <= appliedToken || status.error) return;
+    appliedToken = myToken;
+    recording.active = Boolean(status.recording);
+    recording.startedAt = status.recording ? status.started_at : null;
+    recording.maxSeconds = status.max_seconds ?? recording.maxSeconds;
+    recording.available = Boolean(status.available);
+    recording.live = normalizeLive(status.live);
     publish();
-    schedule();
-  } else render();
+  } finally {
+    polling = false;
+  }
 }
 
+/**
+ * Serialized poll loop: each cycle waits for the previous request (and any
+ * network failure) to settle before scheduling the next one, so requests
+ * never overlap and a transient error can never wedge the loop.
+ */
+let generation = 0;
+
 function schedule() {
-  clearInterval(timerId);
-  timerId = setInterval(async () => {
-    await poll();
-  }, recording.active ? ACTIVE_INTERVAL : IDLE_INTERVAL);
+  clearTimeout(timerId);
+  const myGeneration = ++generation;
+  const tick = async () => {
+    if (myGeneration !== generation) return;
+    try { await poll(); } catch { /* network hiccup: retry on next tick */ }
+    if (myGeneration !== generation) return;
+    timerId = setTimeout(tick, isLive() ? ACTIVE_INTERVAL : IDLE_INTERVAL);
+  };
+  timerId = setTimeout(tick, isLive() ? ACTIVE_INTERVAL : IDLE_INTERVAL);
 }
 
 export async function initRecording(onIndicatorClick) {
   $('recording-indicator').onclick = onIndicatorClick;
-  await poll();
+  try { await poll(); } catch { /* schedule() will retry initial connection failure */ }
   publish();
   schedule();
-  // The tick keeps every visible timer moving between polls.
+  // The tick keeps every visible timer/draft view moving between polls.
   setInterval(() => {
     render();
-    if (recording.active) window.dispatchEvent(new Event('transcriber:recording-tick'));
+    if (isLive()) window.dispatchEvent(new Event('transcriber:recording-tick'));
   }, 1000);
 }

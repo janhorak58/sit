@@ -1,13 +1,13 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "ŠIT",
+  "productName": "SHIT",
   "version": "0.1.0",
   "identifier": "com.transcriber.desktop",
   "app": {
     "windows": [
       {
         "label": "main",
-        "title": "ŠIT — ŠIKOVNÝ INTERAKTIVNÍ TRANSKRIPTOR",
+        "title": "SHIT — Super-helpful interactive transcriber",
         "url": "http://127.0.0.1:47831",
         "width": 1440,
         "height": 900

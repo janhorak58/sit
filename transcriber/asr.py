@@ -2,8 +2,8 @@
 
 The work Spark endpoint is OpenAI-compatible. A fast probe decides whether to
 send the audio there, as 15-minute 32 kbps mp3 chunks (the endpoint caps upload
-size). Any probe or transcription failure falls back to the local
-faster-whisper model; an unavailable work endpoint never blocks transcription.
+size). Any probe or transcription failure falls back to the local Canary
+model; an unavailable work endpoint never blocks transcription.
 """
 
 import dataclasses
@@ -12,11 +12,12 @@ import logging
 from pathlib import Path
 import subprocess
 import tempfile
+import wave
 
 import httpx
 
-from .config import SPARK_WHISPER_MODEL, SPARK_WHISPER_URL
-from .models import get_whisper_model
+from .config import LOCAL_ASR_DEFAULT_LANGUAGE, SPARK_WHISPER_MODEL, SPARK_WHISPER_URL
+from .models import get_local_asr
 
 log = logging.getLogger(__name__)
 
@@ -42,15 +43,15 @@ class Transcript:
 def remote_status():
     """Return public backend state without leaking internal endpoint details."""
     if not SPARK_WHISPER_URL:
-        return {"available": False, "backend": "local", "label": "Lokální model"}
+        return {"available": False, "backend": "local", "label": "Local model"}
     try:
         base = SPARK_WHISPER_URL.removesuffix("/v1/audio/transcriptions").rstrip("/")
         response = httpx.get(f"{base}/v1/models", timeout=2.0)
         if response.is_success:
-            return {"available": True, "backend": "spark", "label": "Pracovní Spark"}
-    except httpx.HTTPError:
+            return {"available": True, "backend": "spark", "label": "Working Spark"}
+    except (httpx.HTTPError, OSError):
         pass
-    return {"available": False, "backend": "local", "label": "Lokální model"}
+    return {"available": False, "backend": "local", "label": "Local model"}
 
 
 # 15 min of 32 kbps mono mp3 is ~3.5 MB, comfortably under the remote's
@@ -72,8 +73,13 @@ def _mp3_chunks(wav_path, out_dir):
     return sorted(Path(out_dir).glob("part*.mp3"))
 
 
-def _post_audio(path, language):
-    """One chunk -> (segments, duration), both relative to the chunk's own start."""
+def _post_audio(path, language, timeout=3600.0, mime="audio/mpeg"):
+    """One chunk -> (segments, duration), both relative to the chunk's own start.
+
+    ``mime`` matches whatever bytes ``path`` actually holds: mp3 for batch
+    chunks, wav for a live-draft window posted straight through with no
+    ffmpeg transcode.
+    """
     data = {"model": SPARK_WHISPER_MODEL, "response_format": "verbose_json"}
     if language:
         data["language"] = language
@@ -81,8 +87,8 @@ def _post_audio(path, language):
         response = httpx.post(
             SPARK_WHISPER_URL,
             data=data,
-            files={"file": (path.name, audio, "audio/mpeg")},
-            timeout=3600.0,
+            files={"file": (path.name, audio, mime)},
+            timeout=timeout,
         )
     response.raise_for_status()
     body = response.json()
@@ -102,14 +108,14 @@ def _post_audio(path, language):
     return segments, duration
 
 
-def _remote_transcribe(wav_path, language, on_segment):
+def _remote_transcribe(wav_path, language, on_segment, timeout=3600.0):
     """Chunked remote transcription; segment times are stitched back together."""
     segments, offset = [], 0.0
     with tempfile.TemporaryDirectory() as tmp:
         chunks = _mp3_chunks(wav_path, tmp)
         total = len(chunks) * CHUNK_SECONDS  # only drives the progress bar
         for chunk in chunks:
-            part, duration = _post_audio(chunk, language)
+            part, duration = _post_audio(chunk, language, timeout=timeout)
             for seg in part:
                 shifted = dataclasses.replace(seg, start=seg.start + offset, end=seg.end + offset)
                 segments.append(shifted)
@@ -118,28 +124,65 @@ def _remote_transcribe(wav_path, language, on_segment):
     return Transcript(segments, offset, "spark")
 
 
+def _wav_duration(wav_path):
+    """Audio length straight from the PCM header; no decode, no ffprobe."""
+    with wave.open(str(wav_path), "rb") as handle:
+        return handle.getnframes() / handle.getframerate()
+
+
 def _local_transcribe(wav_path, language, on_segment):
-    kwargs = {"language": language} if language else {}
-    generated, info = get_whisper_model().transcribe(str(wav_path), **kwargs)
+    """Canary over VAD-cut speech windows; silence never reaches the model.
+
+    The language is always passed. Left to auto-detection, per-window language
+    identification makes Czech recordings drift into Slovak and English.
+    """
+    duration = _wav_duration(wav_path)
     segments = []
-    for raw in generated:
+    recognized = get_local_asr().recognize(
+        str(wav_path),
+        language=language or LOCAL_ASR_DEFAULT_LANGUAGE,
+        pnc=True,
+    )
+    for raw in recognized:
+        if not raw.text.strip():
+            continue
         seg = Segment(raw.start, raw.end, raw.text)
         segments.append(seg)
-        on_segment(seg, info.duration)
-    return Transcript(segments, info.duration, "local")
+        on_segment(seg, duration)
+    return Transcript(segments, duration, "local")
 
 
-def transcribe(wav_path, language, on_segment=lambda segment, duration: None):
-    """Try Spark first when healthy; otherwise execute faster-whisper locally."""
+def transcribe(wav_path, language, on_segment=lambda segment, duration: None, timeout=3600.0):
+    """Try Spark first when healthy; otherwise execute Canary locally.
+
+    ``timeout`` bounds only the remote HTTP call (default matches the batch
+    pipeline's original unbounded-feeling budget); local inference has no
+    network timeout to apply. Callers doing short live-draft passes pass a
+    much smaller value so a stalled remote never blocks the next window.
+    """
     if remote_status()["available"]:
         try:
-            return _remote_transcribe(wav_path, language, on_segment)
-        except (httpx.HTTPError, ValueError, KeyError, subprocess.CalledProcessError) as exc:
+            return _remote_transcribe(wav_path, language, on_segment, timeout=timeout)
+        except (httpx.HTTPError, ValueError, KeyError, OSError, subprocess.CalledProcessError) as exc:
             global _last_remote_error
             detail = getattr(getattr(exc, "response", None), "text", "")
             _last_remote_error = f"{exc} {detail}".strip()[:1000]
             log.warning("Spark transcription failed, falling back to local: %s", _last_remote_error)
     return _local_transcribe(wav_path, language, on_segment)
+
+
+def transcribe_live(wav_path, language, timeout, remote_available):
+    """Transcribe a short live WAV directly, using the session's backend probe."""
+    if remote_available:
+        try:
+            segments, duration = _post_audio(wav_path, language, timeout=timeout, mime="audio/wav")
+            return Transcript(segments, duration, "spark")
+        except (httpx.HTTPError, ValueError, KeyError, OSError) as exc:
+            global _last_remote_error
+            detail = getattr(getattr(exc, "response", None), "text", "")
+            _last_remote_error = f"{exc} {detail}".strip()[:1000]
+            log.warning("Live draft window remote transcription failed, falling back to local: %s", _last_remote_error)
+    return _local_transcribe(wav_path, language, lambda segment, duration: None)
 
 
 def diagnose():
@@ -159,7 +202,7 @@ def diagnose():
                 check=True, capture_output=True,
             )
             segments, _ = _post_audio(probe, "cs")
-        report["upload"] = {"ok": True, "detail": f"1s testovací audio přijato ({len(segments)} segmentů)"}
+        report["upload"] = {"ok": True, "detail": f"1s test audio accepted ({len(segments)} segments)"}
     except Exception as exc:  # any failure is the answer the user came for
         detail = getattr(getattr(exc, "response", None), "text", "") or str(exc)
         report["upload"] = {"ok": False, "detail": str(detail)[:1000]}

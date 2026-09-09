@@ -1,87 +1,87 @@
 <!doctype html>
-<html lang="cs">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>ŠIT — ŠIKOVNÝ INTERAKTIVNÍ TRANSKRIPTOR</title>
-  <meta name="application-name" content="ŠIT">
-  <meta name="apple-mobile-web-app-title" content="ŠIT">
-  <meta name="description" content="ŠIT — ŠIKOVNÝ INTERAKTIVNÍ TRANSKRIPTOR. Nahrávky, přepisy a souhrny na jednom místě.">
+  <title>SHIT — Super-helpful interactive transcriber</title>
+  <meta name="application-name" content="SHIT">
+  <meta name="apple-mobile-web-app-title" content="SHIT">
+  <meta name="description" content="SHIT — Super-helpful interactive transcriber. Recordings, transcripts, and summaries in one place.">
   <link rel="manifest" href="/static/manifest.json">
   <link rel="icon" href="/static/icons/icon-192.png">
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
-  <meta name="theme-color" content="#102d25">
+  <meta name="theme-color" content="#241a15">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
 <div class="dashboard-shell">
   <aside class="dashboard-sidebar">
-    <a class="brand" href="#dashboard" aria-label="ŠIT — ŠIKOVNÝ INTERAKTIVNÍ TRANSKRIPTOR · Přehled"><span class="record-dot" aria-hidden="true"></span><span class="brand-copy"><strong>ŠIT</strong><small>ŠIKOVNÝ INTERAKTIVNÍ<br>TRANSKRIPTOR</small></span></a>
-    <nav class="side-nav" aria-label="Hlavní navigace">
-      <a href="#dashboard"><span>⌂</span> Přehled</a>
-      <a class="new-link" href="#new"><span>＋</span> Nová nahrávka</a>
-      <a href="#library"><span>▤</span> Knihovna</a>
-      <a href="#settings"><span>⚙</span> Nastavení</a>
+    <a class="brand" href="#dashboard" aria-label="SHIT — Super-helpful interactive transcriber · Overview"><span class="record-dot" aria-hidden="true"></span><span class="brand-copy"><strong>SHIT</strong><small>Super-helpful interactive<br>transcriber</small></span></a>
+    <nav class="side-nav" aria-label="Main navigation">
+      <a href="#dashboard"><span>⌂</span> Overview</a>
+      <a class="new-link" href="#new"><span>＋</span> New recording</a>
+      <a href="#library"><span>▤</span> Library</a>
+      <a href="#settings"><span>⚙</span> Settings</a>
     </nav>
     <section class="side-projects" aria-labelledby="projects-title">
-      <p class="side-label" id="projects-title">Projekty</p>
-      <div id="sidebar-projects"><span class="side-empty">Načítám…</span></div>
+      <p class="side-label" id="projects-title">Projects</p>
+      <div id="sidebar-projects"><span class="side-empty">Loading…</span></div>
     </section>
     <div class="sidebar-status">
       <button id="recording-indicator" class="recording-indicator" type="button" hidden>
         <span class="pulse"></span>
-        <b>Nahrávání běží</b>
+        <b>Recording in progress</b>
         <span id="recording-indicator-timer">00:00</span>
       </button>
-      <p class="side-label">Přepisovací engine</p>
-      <a id="asr-badge" class="engine checking" href="#settings" title="Detaily a diagnostika"><span></span><b>Zjišťuji model</b></a>
+      <p class="side-label">Transcription engine</p>
+      <a id="asr-badge" class="engine checking" href="#settings" title="Details and diagnostics"><span></span><b>Checking model</b></a>
     </div>
   </aside>
 
   <main class="dashboard-main">
     <div class="view" data-view="dashboard">
       <header class="workspace-header">
-        <div><p class="eyebrow">PRACOVNÍ PLOCHA</p><h1>Přehled</h1></div>
-        <p>Každý meeting má vlastní složku, nahrávku, přepis i souhrn.</p>
+        <div><p class="eyebrow">WORKSPACE</p><h1>Overview</h1></div>
+        <p>Every meeting has its own folder, recording, transcript, and summary.</p>
       </header>
       <section class="dashboard-start">
         <div>
-          <h2>Nová nahrávka</h2>
-          <p>Vyber projekt a rovnou nahrávej, nebo nahraj hotový audiosoubor. Přepis a souhrn navazují.</p>
+          <h2>New recording</h2>
+          <p>Pick a project and start recording right away, or upload a finished audio file. Transcript and summary follow.</p>
         </div>
-        <a class="primary action-link" href="#new">Začít</a>
+        <a class="primary action-link" href="#new">Start</a>
       </section>
       <section class="dashboard-section">
-        <header><div><p class="eyebrow">KNIHOVNA</p><h2>Projekty</h2></div><a href="#library">Otevřít celou knihovnu →</a></header>
+        <header><div><p class="eyebrow">LIBRARY</p><h2>Projects</h2></div><a href="#library">Open full library →</a></header>
         <div id="dashboard-projects" class="project-grid"></div>
       </section>
       <section id="recent-section" class="dashboard-section" hidden>
-        <header><div><p class="eyebrow">NAPOSLEDY OTEVŘENO</p><h2>Pokračovat v práci</h2></div></header>
+        <header><div><p class="eyebrow">RECENTLY OPENED</p><h2>Continue working</h2></div></header>
         <div id="dashboard-recent" class="recent-list"></div>
       </section>
     </div>
 
     <div class="view" data-view="new" hidden>
       <header class="workspace-header">
-        <div><p class="eyebrow">NOVÁ NAHRÁVKA</p><h1>Kam ji uložit?</h1></div>
-        <p>Vyber projekt a pojmenuj nahrávku. Nahrávat nebo nahrát soubor budeš hned na dalším kroku.</p>
+        <div><p class="eyebrow">NEW RECORDING</p><h1>Where to save it?</h1></div>
+        <p>Pick a project and name the recording. You'll record or upload a file right in the next step.</p>
       </header>
       <form id="create-meeting" class="create-card">
         <section class="create-projects">
-          <p class="side-label">Projekt</p>
+          <p class="side-label">Project</p>
           <div id="project-picker" class="project-picker"></div>
           <input id="project" type="hidden" value="">
           <label id="new-project-field" class="new-project-field" hidden>
-            <span>Název nového projektu</span>
-            <input id="new-project" type="text" placeholder="Např. Crytur" autocomplete="off">
+            <span>New project name</span>
+            <input id="new-project" type="text" placeholder="e.g. Crytur" autocomplete="off">
           </label>
         </section>
         <section class="create-meta">
-          <label><span>Název nahrávky</span><input id="filename" type="text" required></label>
-          <div class="folder-preview"><span>Vytvoří se</span><code id="folder-preview">—</code></div>
+          <label><span>Recording name</span><input id="filename" type="text" required></label>
+          <div class="folder-preview"><span>Will be created</span><code id="folder-preview">—</code></div>
           <div class="stage-actions">
-            <a class="quiet action-link" href="#dashboard">Zrušit</a>
-            <button id="create-workspace" class="primary" type="submit">Pokračovat k nahrávání →</button>
+            <a class="quiet action-link" href="#dashboard">Cancel</a>
+            <button id="create-workspace" class="primary" type="submit">Continue to recording →</button>
           </div>
         </section>
       </form>
@@ -89,40 +89,54 @@
 
     <div class="view" data-view="workspace" hidden>
       <header class="workspace-header folder-header">
-        <div><button id="workspace-library" class="path-link"><span>← Knihovna /</span> <b id="workspace-path">—</b></button><div class="meeting-title-row"><h1 id="workspace-title">Meeting</h1><button id="workspace-rename" class="title-edit" type="button" aria-label="Přejmenovat meeting" title="Přejmenovat meeting">✎</button></div></div>
-        <div class="workspace-header-actions"><div class="mode-switch" aria-label="Režim meetingu"><button id="workspace-view-mode" class="mode-option" type="button" disabled>Prohlížet</button><span class="mode-option active" aria-current="page">Upravit</span></div><a class="small quiet action-link" href="#new">＋ Nová nahrávka</a></div>
+        <div><button id="workspace-library" class="path-link"><span>← Library /</span> <b id="workspace-path">—</b></button><div class="meeting-title-row"><h1 id="workspace-title">Meeting</h1><button id="workspace-rename" class="title-edit" type="button" aria-label="Rename meeting" title="Rename meeting">✎</button></div></div>
+        <div class="workspace-header-actions"><div class="mode-switch" aria-label="Meeting mode"><button id="workspace-view-mode" class="mode-option" type="button" disabled>View</button><span class="mode-option active" aria-current="page">Edit</span></div><a class="small quiet action-link" href="#new">＋ New recording</a></div>
       </header>
       <div class="workspace-grid">
-        <section class="wizard" aria-label="Workflow meetingu">
-          <nav class="steps" role="tablist" aria-label="Postup">
-            <button id="step-tab-1" class="step active" role="tab" aria-controls="step-panel-1" aria-selected="true" data-step="1"><span>1</span><b>Nahrávka</b></button>
-            <button id="step-tab-2" class="step" role="tab" aria-controls="step-panel-2" aria-selected="false" data-step="2" disabled><span>2</span><b>Přepis</b></button>
-            <button id="step-tab-3" class="step" role="tab" aria-controls="step-panel-3" aria-selected="false" data-step="3" disabled><span>3</span><b>Souhrn</b></button>
+        <section class="wizard" aria-label="Meeting workflow">
+          <nav class="steps" role="tablist" aria-label="Progress">
+            <button id="step-tab-1" class="step active" role="tab" aria-controls="step-panel-1" aria-selected="true" data-step="1"><span>1</span><b>Recording</b></button>
+            <button id="step-tab-2" class="step" role="tab" aria-controls="step-panel-2" aria-selected="false" data-step="2" disabled><span>2</span><b>Transcript</b></button>
+            <button id="step-tab-3" class="step" role="tab" aria-controls="step-panel-3" aria-selected="false" data-step="3" disabled><span>3</span><b>Summary</b></button>
           </nav>
           <div id="step-panel-1" class="stage active" role="tabpanel" aria-labelledby="step-tab-1" data-stage="1">
-            <div class="stage-copy"><span class="stage-number">01</span><div><h2>Přidat nahrávku</h2><p>Výsledek se uloží přímo do otevřené složky meetingu.</p></div></div>
-            <div id="source-locked" class="source-locked" hidden><span>WAV</span><div><b>Nahrávka je uložená</b><small>V pracovním prostoru zůstává jako pevný vstup. Přepis i souhrn můžeš spouštět znovu.</small></div><button id="to-transcript" class="small quiet" type="button">Přejít k přepisu →</button></div>
+            <div class="stage-copy"><span class="stage-number">01</span><div><h2>Add recording</h2><p>The result is saved directly into the open meeting folder.</p></div></div>
+            <label id="record-lang-field" class="record-lang-field"><span>Recording language</span><select id="record-lang"><option value="cs">Czech</option><option value="en">English</option><option value="">Detect automatically</option></select></label>
+            <label id="live-toggle-field" class="live-toggle-field"><input id="live-toggle" type="checkbox" checked><span class="live-toggle-track" aria-hidden="true"></span><span class="live-toggle-copy"><b>Live transcript while recording</b><small>Continuous text preview. Turning it off saves performance; the final transcript stays the same.</small></span></label>
+            <div id="source-locked" class="source-locked" hidden><span>WAV</span><div><b>Recording is saved</b><small>It stays in the workspace as a fixed input. You can rerun the transcript and summary anytime.</small></div><button id="to-transcript" class="small quiet" type="button">Go to transcript →</button></div>
             <div id="source-choices" class="source-grid">
-              <button id="start" class="source-card" type="button"><span class="source-icon mic">●</span><b>Začít nahrávat</b><small>Mikrofon + zvuk počítače</small></button>
-              <label class="source-card upload-card" for="audiofile"><span class="source-icon upload">↑</span><b>Nahrát soubor</b><small>mp3, m4a, wav, video…</small><input id="audiofile" type="file" accept="audio/*,video/*"></label>
+              <button id="start" class="source-card" type="button"><span class="source-icon mic">●</span><b>Start recording</b><small>Microphone + system audio</small></button>
+              <label class="source-card upload-card" for="audiofile"><span class="source-icon upload">↑</span><b>Upload file</b><small>mp3, m4a, wav, video…</small><input id="audiofile" type="file" accept="audio/*,video/*"></label>
             </div>
-            <div id="recording-live" class="recording-live" hidden><div class="pulse"></div><div><b>Nahrávání běží</b><span id="timer">00:00</span></div><button id="cancel-record" class="quiet" type="button">Zrušit</button><button id="stop" class="primary" type="button">Zastavit a uložit →</button></div>
-            <p class="status-line" id="source-status">Připraveno přijmout nahrávku.</p>
+            <div id="record-session" class="record-session" hidden>
+              <div class="record-toolbar">
+                <div class="record-toolbar-info"><span class="record-live-dot" aria-hidden="true"></span><b id="record-toolbar-label">Recording in progress</b></div>
+                <span id="timer" class="record-timer">00:00</span>
+                <div class="record-toolbar-actions"><button id="cancel-record" class="quiet" type="button">Cancel</button><button id="stop" class="primary" type="button">Stop and save →</button></div>
+              </div>
+              <div id="record-transcript" class="record-transcript">
+                <div class="record-transcript-head"><b>Live transcript</b><span id="live-draft-status" class="live-draft-status" role="status" aria-live="polite"></span></div>
+                <p class="live-draft-notice">The text is just a preview and may change as it gets refined.</p>
+                <div id="live-draft-segments" class="live-draft-segments" aria-label="Live transcript"></div>
+                <button id="jump-latest" class="jump-latest" type="button" hidden>↓ Jump to latest text</button>
+              </div>
+            </div>
+            <p class="status-line" id="source-status">Ready to receive a recording.</p>
           </div>
           <div id="step-panel-2" class="stage" role="tabpanel" aria-labelledby="step-tab-2" data-stage="2">
-            <div class="stage-copy"><span class="stage-number">02</span><div><h2>Připravit přepis</h2><p id="stored-path">Nahrávka je bezpečně uložená.</p></div></div>
+            <div class="stage-copy"><span class="stage-number">02</span><div><h2>Prepare transcript</h2><p id="stored-path">The recording is safely saved.</p></div></div>
             <div class="transcribe-options">
-              <label><span>Jazyk</span><select id="lang"><option value="cs">Čeština</option><option value="en">Angličtina</option><option value="">Rozpoznat automaticky</option></select></label>
-              <label><span>Počet mluvčích</span><input id="numspeakers" type="number" min="1" placeholder="Nevím"><small>1 = bez rozlišení mluvčích</small></label>
+              <label><span>Language</span><select id="lang"><option value="cs">Czech</option><option value="en">English</option><option value="">Detect automatically</option></select></label>
+              <label><span>Number of speakers</span><input id="numspeakers" type="number" min="1" placeholder="Don't know"><small>1 = no speaker separation</small></label>
             </div>
-            <div id="bar"><div id="fill"></div></div><p class="status-line" id="status">Připraveno.</p>
-            <div class="diarize-action"><div><b>Rozpoznání mluvčích</b><small>Použije hotový přepis. Přepisovací engine se znovu nespustí.</small></div><button id="diarize" class="quiet" type="button" disabled>Rozpoznat mluvčí znovu</button></div>
-            <div class="stage-actions"><button id="to-summary" class="quiet" type="button" disabled>Souhrn →</button><button id="transcribe" class="primary" type="button">Spustit přepis →</button></div>
+            <div id="bar"><div id="fill"></div></div><p class="status-line" id="status">Ready.</p>
+            <div class="diarize-action"><div><b>Speaker recognition</b><small>Uses the finished transcript. The transcription engine won't run again.</small></div><button id="diarize" class="quiet" type="button" disabled>Recognize speakers again</button></div>
+            <div class="stage-actions"><button id="to-summary" class="quiet" type="button" disabled>Summary →</button><button id="transcribe" class="primary" type="button">Start transcription →</button></div>
           </div>
           <div id="step-panel-3" class="stage" role="tabpanel" aria-labelledby="step-tab-3" data-stage="3">
-            <div class="stage-copy"><span class="stage-number">03</span><div><h2>Souhrn</h2><p>Vychází z aktuálního přepisu a můžeš ho kdykoliv přegenerovat.</p></div></div>
-            <div class="summary-offer"><div><b>Souhrn, rozhodnutí a úkoly</b><span>Původní souhrn se při dalším spuštění nahradí.</span></div><button id="summarize" class="primary" type="button">Vytvořit / přegenerovat souhrn</button></div>
-            <p class="status-line" id="summary-status"></p><div class="stage-actions"><a class="quiet action-link" href="#library">Přejít do knihovny</a><a id="new-recording" class="primary action-link" href="#new">＋ Další nahrávka</a></div>
+            <div class="stage-copy"><span class="stage-number">03</span><div><h2>Summary</h2><p>Based on the current transcript, and you can regenerate it anytime.</p></div></div>
+            <div class="summary-offer"><div><b>Summary, decisions, and tasks</b><span>The previous summary will be replaced on the next run.</span></div><button id="summarize" class="primary" type="button">Create / regenerate summary</button></div>
+            <p class="status-line" id="summary-status"></p><div class="stage-actions"><a class="quiet action-link" href="#library">Go to library</a><a id="new-recording" class="primary action-link" href="#new">＋ Another recording</a></div>
           </div>
         </section>
       </div>
@@ -130,27 +144,27 @@
 
     <div class="view" data-view="library" hidden>
       <header class="workspace-header">
-        <div><p class="eyebrow">KNIHOVNA</p><h1>Projekty a meetingy</h1></div>
-        <p>Jedno místo pro procházení, přesuny, nové přepisy i mazání výstupů.</p>
+        <div><p class="eyebrow">LIBRARY</p><h1>Projects and meetings</h1></div>
+        <p>One place to browse, move, retranscribe, and delete outputs.</p>
       </header>
       <section class="library-card">
-        <header class="library-toolbar"><div class="crumbs" id="crumbs"></div><div class="row"><button class="small quiet" id="mkdir" type="button">＋ Složka</button><button class="small quiet" id="openhere" type="button">Otevřít na disku</button></div></header>
-        <label class="library-search"><span>Hledat v této složce</span><input id="library-search" type="search" placeholder="Název meetingu nebo složky…"></label>
+        <header class="library-toolbar"><div class="crumbs" id="crumbs"></div><div class="row"><button class="small quiet" id="mkdir" type="button">＋ Folder</button><button class="small quiet" id="openhere" type="button">Open on disk</button></div></header>
+        <label class="library-search"><span>Search this folder</span><input id="library-search" type="search" placeholder="Meeting or folder name…"></label>
         <div id="library" class="library-browser"></div>
       </section>
     </div>
 
     <div class="view" data-view="meeting" hidden>
       <header class="workspace-header">
-        <div><p class="eyebrow">MEETING</p><div class="meeting-title-row"><h1 id="meeting-title">Přepis</h1><button id="meeting-rename" class="title-edit" type="button" aria-label="Přejmenovat meeting" title="Přejmenovat meeting">✎</button></div></div>
-        <div class="workspace-header-actions"><button id="meeting-back" class="small quiet" type="button">← Knihovna</button><div class="mode-switch" aria-label="Režim meetingu"><span class="mode-option active" aria-current="page">Prohlížet</span><button id="meeting-edit-mode" class="mode-option" type="button">Upravit</button></div></div>
+        <div><p class="eyebrow">MEETING</p><div class="meeting-title-row"><h1 id="meeting-title">Transcript</h1><button id="meeting-rename" class="title-edit" type="button" aria-label="Rename meeting" title="Rename meeting">✎</button></div></div>
+        <div class="workspace-header-actions"><button id="meeting-back" class="small quiet" type="button">← Library</button><div class="mode-switch" aria-label="Meeting mode"><span class="mode-option active" aria-current="page">View</span><button id="meeting-edit-mode" class="mode-option" type="button">Edit</button></div></div>
       </header>
       <div class="meeting-player"><audio id="meeting-audio" controls></audio><p id="meeting-meta" class="meeting-meta"></p></div>
       <div class="meeting-body"><section id="meeting-transcript" class="meeting-transcript card"></section><aside id="meeting-summary" class="meeting-summary card"></aside></div>
     </div>
 
     <div class="view" data-view="settings" hidden>
-      <header class="workspace-header"><div><p class="eyebrow">NASTAVENÍ</p><h1>Přepisovací engine</h1></div><div class="row"><button id="settings-refresh" class="small" type="button">↻ Otestovat znovu</button></div></header>
+      <header class="workspace-header"><div><p class="eyebrow">SETTINGS</p><h1>Transcription engine</h1></div><div class="row"><button id="settings-refresh" class="small" type="button">↻ Test again</button></div></header>
       <div id="settings-body" class="settings-body"></div>
     </div>
   </main>
@@ -158,10 +172,10 @@
 
 <dialog id="move-dialog" class="move-dialog">
   <form id="move-form" method="dialog">
-    <header><div><p class="eyebrow">PŘESUNOUT MEETING</p><h2 id="move-title">Upravit umístění</h2></div><button id="move-close" class="icon" type="button" aria-label="Zavřít">×</button></header>
-    <label><span>Cílová složka</span><input id="move-folder" type="text" placeholder="Projekt / složka"></label>
-    <label><span>Název</span><input id="move-name" type="text" required></label>
-    <div class="stage-actions"><button id="move-cancel" class="quiet" type="button">Zrušit</button><button class="primary" type="submit">Přesunout</button></div>
+    <header><div><p class="eyebrow">MOVE MEETING</p><h2 id="move-title">Edit location</h2></div><button id="move-close" class="icon" type="button" aria-label="Close">×</button></header>
+    <label><span>Target folder</span><input id="move-folder" type="text" placeholder="Project / folder"></label>
+    <label><span>Name</span><input id="move-name" type="text" required></label>
+    <div class="stage-actions"><button id="move-cancel" class="quiet" type="button">Cancel</button><button class="primary" type="submit">Move</button></div>
   </form>
 </dialog>
 <script type="module" src="/static/js/main.js"></script>

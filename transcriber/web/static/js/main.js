@@ -17,7 +17,7 @@ $('openhere').onclick = async () => {
       body: JSON.stringify({folder: state.currentFolder}),
     });
   } catch {
-    alert('Nepodařilo se spojit s pomocníkem na hostu (transcriber-opener). Je spuštěný?');
+    alert('Could not connect to the host helper (transcriber-opener). Is it running?');
   }
 };
 
