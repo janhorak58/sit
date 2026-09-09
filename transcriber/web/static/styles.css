@@ -262,6 +262,19 @@ button.icon { padding: 3px 7px; border: 0; color: var(--muted); background: tran
 .meeting-summary-markdown { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; color: var(--ink); font: 13px/1.6 Manrope, sans-serif; }
 .meeting-item { padding: 7px 0; border-top: 1px solid var(--line); font-size: 12px; }
 
+/* The brief reads like a timestamped control room: claims stay compact, proof stays adjacent. */
+.brief-head { padding: 2px 0 17px; border-bottom: 2px solid var(--accent); }
+.brief-kicker, .brief-label { margin: 0 0 7px; color: var(--primary-2); font: 500 10px DM Mono, monospace; letter-spacing: .13em; text-transform: uppercase; }
+.brief-head .meeting-summary-text { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.65; }
+.brief-section { padding: 17px 0 0; }
+.brief-item { position: relative; padding: 10px 0; border-top: 1px solid var(--line); }
+.brief-item-text { font-size: 12px; font-weight: 750; line-height: 1.5; }
+.brief-item-detail { margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.evidence-links { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.evidence-link { padding: 3px 6px; border: 1px solid #ebc7b1; color: var(--primary-2); background: var(--accent-soft); font: 500 10px DM Mono, monospace; }
+.evidence-link:hover { border-color: var(--primary-2); background: var(--accent); }
+.follow-up { margin-top: 17px; padding: 14px; border-left: 3px solid var(--primary); background: var(--accent-soft); }
+
 .settings-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; align-items: start; }
 .setcard { padding: 20px 22px; }
 .setcard h3 { margin: 0 0 12px; font-size: 14px; }

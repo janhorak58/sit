@@ -208,6 +208,8 @@ def rename_speaker(path, old_name, new_name):
     return {"segments": segments}
 
 
+
+
 def move_item(folder, name, to_folder, to_name, wav_path=None):
     """Rename/move every artifact belonging to a library item together."""
     if not valid_component(name) or not valid_component(to_name):
