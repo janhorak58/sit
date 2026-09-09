@@ -1,13 +1,13 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "SHIT",
+  "productName": "SIT",
   "version": "0.1.0",
   "identifier": "com.transcriber.desktop",
   "app": {
     "windows": [
       {
         "label": "main",
-        "title": "SHIT — Super-helpful interactive transcriber",
+        "title": "SIT — Smart Interactive Transcriber",
         "url": "http://127.0.0.1:47831",
         "width": 1440,
         "height": 900

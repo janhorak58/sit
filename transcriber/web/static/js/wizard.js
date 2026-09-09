@@ -4,7 +4,7 @@ import {elapsedSeconds, initRecording, recording, setRecording} from './recordin
 import {setWorkspace, state, updateWorkspacePaths, workspaceFromPath} from './state.js';
 import {transcribePath, watchProgress} from './transcribe.js';
 
-const LIVE_TOGGLE_KEY = 'shit.live-enabled';
+const LIVE_TOGGLE_KEY = 'sit.live-enabled';
 function loadLiveToggle() {
   return localStorage.getItem(LIVE_TOGGLE_KEY) !== '0';
 }

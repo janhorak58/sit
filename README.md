@@ -1,6 +1,6 @@
-# SHIT — Super-helpful interactive transcriber
+# SIT — Smart Interactive Transcriber
 
-Recordings, speaker-labeled transcripts, and summaries in one place. SHIT accepts
+Recordings, speaker-labeled transcripts, and summaries in one place. SIT accepts
 audio/video files, and on a supported Linux audio server it records the
 microphone together with system audio.
 
@@ -121,7 +121,7 @@ for simply opening the app or transcribing.
 ```
 
 Open <http://127.0.0.1:47831>. The backend runs until the command is
-terminated with Ctrl+C. Data is stored by default in `~/.local/share/shit`
+terminated with Ctrl+C. Data is stored by default in `~/.local/share/sit`
 (respects `XDG_DATA_HOME`).
 
 ### Option B — native desktop window
@@ -136,18 +136,18 @@ cargo build --release --manifest-path src-tauri/Cargo.toml
 python3 scripts/install-desktop.py
 ```
 
-**SHIT** will appear in your application menu. You can also launch it from a
+**SIT** will appear in your application menu. You can also launch it from a
 terminal by absolute path:
 
 ```bash
-~/.local/bin/shit
+~/.local/bin/sit
 ```
 
 The installer does not require sudo. It creates:
 
-- `~/.local/bin/shit` — a launcher with an absolute path to the checkout and `.venv/bin/python`;
-- `${XDG_DATA_HOME:-~/.local/share}/applications/shit.desktop` — a menu entry;
-- `${XDG_DATA_HOME:-~/.local/share}/icons/shit.png` — an icon.
+- `~/.local/bin/sit` — a launcher with an absolute path to the checkout and `.venv/bin/python`;
+- `${XDG_DATA_HOME:-~/.local/share}/applications/sit.desktop` — a menu entry;
+- `${XDG_DATA_HOME:-~/.local/share}/icons/sit.png` — an icon.
 
 Reinstalling updates its own files; it refuses to change a foreign file or
 symlink at any of the target locations. After moving the checkout, run the
@@ -160,7 +160,7 @@ it may also try to start an already-installed `transcriber.service`. If the
 service is unavailable, it starts Python directly — **systemd is not
 required**, not even under WSL.
 Before opening the window it waits for the API to respond; a broken install is
-reported on stderr. If something goes wrong, run `~/.local/bin/shit` in a
+reported on stderr. If something goes wrong, run `~/.local/bin/sit` in a
 terminal.
 
 **Closing the window stops the backend the window itself started.** Finish
@@ -209,15 +209,15 @@ the repository. For an existing library, set for example
 **An existing `/data` is not moved automatically:** if you already use it
 outside Docker, keep `TRANSCRIBER_DATA_DIR=/data` in the environment or `.env`.
 
-### Migrating from ŠIT
+### Migrating from SHIT
 
-The renamed app uses `~/.local/share/shit` by default. Existing recordings
-remain in `~/.local/share/sit`; either move that directory to the new location
-or set `TRANSCRIBER_DATA_DIR=~/.local/share/sit` before starting SHIT.
+The renamed app uses `~/.local/share/sit` by default. Existing recordings
+remain in `~/.local/share/shit`; either move that directory to the new location
+or set `TRANSCRIBER_DATA_DIR=~/.local/share/shit` before starting SIT.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `TRANSCRIBER_DATA_DIR` | `${XDG_DATA_HOME:-~/.local/share}/shit`; Docker `/data` | Library root; an explicit value takes precedence, `~` is expanded |
+| `TRANSCRIBER_DATA_DIR` | `${XDG_DATA_HOME:-~/.local/share}/sit`; Docker `/data` | Library root; an explicit value takes precedence, `~` is expanded |
 | `TRANSCRIBER_HOST` / `TRANSCRIBER_PORT` | `127.0.0.1` / `47831` | Backend address for manual runs |
 | `HF_TOKEN` | empty | Access to gated pyannote models |
 | `LOCAL_ASR_MODEL` | `nemo-canary-1b-v2` | Local ONNX ASR model (`onnx-asr`); `nemo-parakeet-tdt-0.6b-v3` is faster but ignores the language choice |
