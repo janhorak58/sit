@@ -78,11 +78,14 @@ def test_microphone_with_no_capture_profile_at_all_is_unusable(monkeypatch):
     assert "no microphone" in device["note"]
 
 
-def test_recording_switches_the_card_profile_and_puts_it_back(monkeypatch, tmp_path):
+def test_recording_keeps_bluetooth_capture_open_and_restores_profile(monkeypatch, tmp_path):
     card = dict(BT_CARD)
-    calls = []
+    calls, ffmpeg = [], []
     fake_pactl(monkeypatch, [BT_SOURCE], [card], calls)
-    monkeypatch.setattr(recorder_module.subprocess, "Popen", lambda *a, **k: DummyProcess())
+    monkeypatch.setattr(
+        recorder_module.subprocess, "Popen",
+        lambda args, **kwargs: (ffmpeg.extend(args), DummyProcess())[1],
+    )
     monkeypatch.setattr(recorder_module.subprocess, "run", lambda *a, **k: None)
 
     recorder = recorder_module.Recorder(tmp_path / "current.wav")
@@ -91,6 +94,9 @@ def test_recording_switches_the_card_profile_and_puts_it_back(monkeypatch, tmp_p
     assert ("set-card-profile", "bluez_card.2C_BE_EE_87_71_4B", "headset-head-unit") in calls
     assert card["active_profile"] == "headset-head-unit"
     assert recorder.restore_profile == ("bluez_card.2C_BE_EE_87_71_4B", "a2dp-sink")
+    assert ["-f", "pulse", "-i", BT_SOURCE["name"]] == ffmpeg[ffmpeg.index("-f"):ffmpeg.index("-f") + 4]
+    assert any("[0:a]highpass=f=70,lowpass=f=7600[mic]" in arg for arg in ffmpeg)
+    assert any("normalize=0,alimiter=limit=0.95" in arg for arg in ffmpeg)
 
     restored = []
     monkeypatch.setattr(recorder_module.subprocess, "run", lambda args, **k: restored.append(args))
@@ -149,6 +155,12 @@ def test_capture_levels_separate_silence_from_speech(tmp_path):
     assert len(quiet["bars"]) == recorder_module.LEVEL_BARS
     assert speech["peak"] == pytest.approx(0.488, abs=0.01)
     assert max(speech["bars"]) == speech["peak"]
+
+def test_capture_levels_ignore_constant_laptop_microphone_bias(tmp_path):
+    biased = tmp_path / "biased.wav"
+    write_wav(biased, [8000] * 16000)
+
+    assert recorder_module.capture_levels(biased)["peak"] == 0.0
 
 
 def test_capture_levels_tolerate_a_missing_or_empty_capture(tmp_path):

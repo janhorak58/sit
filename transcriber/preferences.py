@@ -11,7 +11,7 @@ DEFAULTS = {
     "profile": "meeting",
     "recording": {
         "default_project": "", "language": "cs", "microphone": "",
-        "live_enabled": True, "live_chunk_seconds": "10",
+        "live_enabled": False, "live_chunk_seconds": "10",
         "speaker_count": "", "auto_diarize": True,
     },
     "transcript": {

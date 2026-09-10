@@ -7,10 +7,6 @@ import {getPreferences} from './customizations.js';
 import {speakerNameEditor} from './speakers.js';
 import {openMeeting} from './meeting.js';
 
-const LIVE_TOGGLE_KEY = 'sit.live-enabled';
-function loadLiveToggle() {
-  return localStorage.getItem(LIVE_TOGGLE_KEY) !== '0';
-}
 let suggestedFolder = '';
 let unlockedStep = 1;
 let suggestionRequest = 0;
@@ -461,7 +457,6 @@ export function initWizard() {
   document.querySelectorAll('.step').forEach(button => {
     button.onclick = () => go(Number(button.dataset.step));
   });
-  $('live-toggle').checked = loadLiveToggle();
   refreshBadge();
   // Saving Connections can flip the engine between Spark and the local model.
   window.addEventListener('transcriber:connections-changed', refreshBadge);
@@ -537,7 +532,6 @@ export function initWizard() {
     if (result.error) { $('start').disabled = false; alert('Error: ' + result.error); return; }
     setRecording(true);
   };
-  $('live-toggle').onchange = () => localStorage.setItem(LIVE_TOGGLE_KEY, $('live-toggle').checked ? '1' : '0');
   $('cancel-record').onclick = async () => {
     if (!confirm('Really cancel the recording? The take will not be kept.')) return;
     $('cancel-record').disabled = true;

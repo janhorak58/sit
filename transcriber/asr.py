@@ -5,7 +5,7 @@ send the audio there, as 15-minute 32 kbps mp3 chunks (the endpoint caps upload
 size). Any probe or transcription failure falls back to the local Canary
 model; an unavailable work endpoint never blocks transcription.
 """
-
+import contextlib
 import dataclasses
 from dataclasses import dataclass
 import logging
@@ -56,11 +56,42 @@ def remote_status():
     return {"available": False, "backend": "local", "label": "Local model"}
 
 
+# Preserve the original recording, but give speech models a cleaner, stable
+# mono signal: remove rumble/hiss, then gently normalize spoken levels.
+MODEL_AUDIO_FILTER = "highpass=f=70,lowpass=f=7600,afftdn=nr=8:nf=-35,dynaudnorm=f=150:g=7:p=0.9:m=15"
+
+
+@contextlib.contextmanager
+def _model_audio(wav_path):
+    """Yield an enhanced temporary WAV, falling back to the original on failure."""
+    with tempfile.TemporaryDirectory() as tmp:
+        enhanced = Path(tmp) / "enhanced.wav"
+        try:
+            proc = subprocess.run(
+                [
+                    "ffmpeg", "-y", "-i", str(wav_path), "-vn",
+                    "-af", MODEL_AUDIO_FILTER, "-ac", "1", "-ar", "16000",
+                    "-c:a", "pcm_s16le", str(enhanced),
+                ],
+                capture_output=True, text=True,
+            )
+        except OSError as exc:
+            log.warning("Audio enhancement unavailable; using original recording: %s", exc)
+            yield wav_path
+            return
+        if proc.returncode != 0 or not enhanced.is_file():
+            log.warning(
+                "Audio enhancement failed; using original recording: %s",
+                (proc.stderr or "").strip()[-500:],
+            )
+            yield wav_path
+            return
+        yield enhanced
+
+
 # 15 min of 32 kbps mono mp3 is ~3.5 MB, comfortably under the remote's
 # per-file size limit whatever a meeting's real length turns out to be.
 CHUNK_SECONDS = 900
-
-
 def _mp3_chunks(wav_path, out_dir):
     """Split+compress the wav into upload-sized mp3 slices, in order."""
     subprocess.run(
@@ -156,36 +187,32 @@ def _local_transcribe(wav_path, language, on_segment):
 
 
 def transcribe(wav_path, language, on_segment=lambda segment, duration: None, timeout=3600.0):
-    """Try Spark first when healthy; otherwise execute Canary locally.
-
-    ``timeout`` bounds only the remote HTTP call (default matches the batch
-    pipeline's original unbounded-feeling budget); local inference has no
-    network timeout to apply. Callers doing short live-draft passes pass a
-    much smaller value so a stalled remote never blocks the next window.
-    """
-    if remote_status()["available"]:
-        try:
-            return _remote_transcribe(wav_path, language, on_segment, timeout=timeout)
-        except (httpx.HTTPError, ValueError, KeyError, OSError, subprocess.CalledProcessError) as exc:
-            global _last_remote_error
-            detail = getattr(getattr(exc, "response", None), "text", "")
-            _last_remote_error = f"{exc} {detail}".strip()[:1000]
-            log.warning("Spark transcription failed, falling back to local: %s", _last_remote_error)
-    return _local_transcribe(wav_path, language, on_segment)
+    """Try Spark first when healthy; otherwise execute Canary locally."""
+    with _model_audio(wav_path) as model_audio:
+        if remote_status()["available"]:
+            try:
+                return _remote_transcribe(model_audio, language, on_segment, timeout=timeout)
+            except (httpx.HTTPError, ValueError, KeyError, OSError, subprocess.CalledProcessError) as exc:
+                global _last_remote_error
+                detail = getattr(getattr(exc, "response", None), "text", "")
+                _last_remote_error = f"{exc} {detail}".strip()[:1000]
+                log.warning("Spark transcription failed, falling back to local: %s", _last_remote_error)
+        return _local_transcribe(model_audio, language, on_segment)
 
 
 def transcribe_live(wav_path, language, timeout, remote_available):
-    """Transcribe a short live WAV directly, using the session's backend probe."""
-    if remote_available:
-        try:
-            segments, duration = _post_audio(wav_path, language, timeout=timeout, mime="audio/wav")
-            return Transcript(segments, duration, "spark")
-        except (httpx.HTTPError, ValueError, KeyError, OSError) as exc:
-            global _last_remote_error
-            detail = getattr(getattr(exc, "response", None), "text", "")
-            _last_remote_error = f"{exc} {detail}".strip()[:1000]
-            log.warning("Live draft window remote transcription failed, falling back to local: %s", _last_remote_error)
-    return _local_transcribe(wav_path, language, lambda segment, duration: None)
+    """Transcribe an enhanced short live WAV using the session's backend probe."""
+    with _model_audio(wav_path) as model_audio:
+        if remote_available:
+            try:
+                segments, duration = _post_audio(model_audio, language, timeout=timeout, mime="audio/wav")
+                return Transcript(segments, duration, "spark")
+            except (httpx.HTTPError, ValueError, KeyError, OSError) as exc:
+                global _last_remote_error
+                detail = getattr(getattr(exc, "response", None), "text", "")
+                _last_remote_error = f"{exc} {detail}".strip()[:1000]
+                log.warning("Live draft window remote transcription failed, falling back to local: %s", _last_remote_error)
+        return _local_transcribe(model_audio, language, lambda segment, duration: None)
 
 
 def diagnose():

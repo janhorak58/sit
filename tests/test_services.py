@@ -17,6 +17,32 @@ def test_asr_falls_back_to_local_when_remote_transcription_fails(monkeypatch, tm
     monkeypatch.setattr(asr, "_local_transcribe", lambda *args: expected)
     assert asr.transcribe(wav, "en").backend == "local"
 
+def test_transcribe_enhances_audio_before_sending_it_to_the_model(monkeypatch, tmp_path):
+    wav = tmp_path / "meeting.wav"
+    wav.write_bytes(b"original")
+    ffmpeg_args = []
+
+    def enhance(args, **kwargs):
+        ffmpeg_args.extend(args)
+        from pathlib import Path
+        Path(args[-1]).write_bytes(b"enhanced")
+        return SimpleNamespace(returncode=0, stderr="")
+
+    seen = {}
+    expected = asr.Transcript([asr.Segment(0, 1, "hello")], 1, "spark")
+    monkeypatch.setattr(asr.subprocess, "run", enhance)
+    monkeypatch.setattr(asr, "remote_status", lambda: {"available": True})
+    monkeypatch.setattr(
+        asr, "_remote_transcribe",
+        lambda path, *args, **kwargs: (seen.update(path=path, content=path.read_bytes()), expected)[1],
+    )
+
+    assert asr.transcribe(wav, "cs") is expected
+    assert seen["path"].name == "enhanced.wav"
+    assert seen["content"] == b"enhanced"
+    assert asr.MODEL_AUDIO_FILTER in ffmpeg_args
+    assert wav.read_bytes() == b"original"
+
 
 def test_local_transcription_always_pins_a_language(monkeypatch, tmp_path):
     """Auto-detection drifts per VAD window: Czech audio came back part Slovak,
@@ -210,6 +236,8 @@ def test_recorder_sets_and_clears_started_at_across_start_stop(monkeypatch, tmp_
 
     def pactl(*args):
         pactl_calls.append(args)
+        if args == ("get-default-source",):
+            return sources[0]["name"]
         if args == ("-f", "json", "list", "sources"):
             return json.dumps(sources)
         if args == ("-f", "json", "list", "cards"):
@@ -226,8 +254,7 @@ def test_recorder_sets_and_clears_started_at_across_start_stop(monkeypatch, tmp_
     assert recorder.started_at is None
     recorder.start("usb-microphone")
     assert recorder.started_at is not None
-    assert any("source=usb-microphone" in call for args in pactl_calls for call in args)
-
+    assert any("source=@DEFAULT_SINK@.monitor" in call for args in pactl_calls for call in args)
     recorder.stop()
     assert recorder.started_at is None
 
@@ -262,7 +289,16 @@ def test_recorder_auto_stops_after_max_duration(monkeypatch, tmp_path):
     wav_path = tmp_path / "recording.wav"
     recorder = recorder_module.Recorder(wav_path)
     monkeypatch.setattr(recorder_module, "MAX_RECORDING_SECONDS", 0.05)
-    monkeypatch.setattr(recorder_module, "pactl", lambda *args: "42")
+    def pactl(*args):
+        if args == ("get-default-source",):
+            return "default-microphone"
+        if args == ("-f", "json", "list", "sources"):
+            return json.dumps([{"name": "default-microphone", "description": "Default", "properties": {}}])
+        if args == ("-f", "json", "list", "cards"):
+            return json.dumps([])
+        return "42"
+
+    monkeypatch.setattr(recorder_module, "pactl", pactl)
     monkeypatch.setattr(
         recorder_module.subprocess, "Popen",
         lambda *args, **kwargs: SimpleNamespace(send_signal=lambda sig: None, wait=lambda: wav_path.write_bytes(b"RIFF")),
@@ -767,6 +803,7 @@ def test_preferences_are_merged_and_persisted(monkeypatch, tmp_path):
     from transcriber import preferences
 
     monkeypatch.setattr(preferences, "PREFERENCES_PATH", tmp_path / "preferences.json")
+    assert preferences.get_preferences()["recording"]["live_enabled"] is False
 
     saved = preferences.save_preferences({
         "recording": {"language": "en", "live_enabled": False},

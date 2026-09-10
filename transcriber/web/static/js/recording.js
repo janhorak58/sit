@@ -15,11 +15,18 @@ function defaultLive() {
 
 export const recording = {active: false, startedAt: null, maxSeconds: null, available: false, levels: null, live: defaultLive()};
 
-// The meter is the user's proof that the selected microphone is being heard.
+// Render the latest 750 ms as a real waveform. Decibels make quiet laptop
+// microphones visible without painting every non-zero sample at full height.
 const WAVE_BARS = 28;
 const SILENT_PEAK = 0.004;
 const SILENT_SECONDS = 4;
 let quietSince = null;
+
+function displayLevel(peak) {
+  if (peak <= 0.0005) return 0;
+  const decibels = 20 * Math.log10(peak);
+  return Math.max(0, Math.min(1, (decibels + 58) / 46));
+}
 
 function renderWave() {
   const wave = $('record-wave');
@@ -28,11 +35,9 @@ function renderWave() {
   if (wave.children.length !== WAVE_BARS) {
     wave.replaceChildren(...Array.from({length: WAVE_BARS}, () => document.createElement('i')));
   }
-  const bars = recording.levels?.bars || [];
+  const levels = recording.levels?.bars || [];
   [...wave.children].forEach((bar, index) => {
-    const level = Number(bars[index]) || 0;
-    // sqrt keeps quiet speech visible without letting peaks saturate.
-    bar.style.height = Math.max(6, Math.round(Math.sqrt(level) * 100)) + '%';
+    bar.style.height = Math.max(5, Math.round(displayLevel(Number(levels[index]) || 0) * 100)) + '%';
   });
   if (!recording.active) { quietSince = null; return; }
   const peak = Number(recording.levels?.peak) || 0;

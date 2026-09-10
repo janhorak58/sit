@@ -148,17 +148,22 @@ def capture_levels(path, bars=LEVEL_BARS):
     if not samples:
         return empty
     step = max(1, len(samples) // bars)
-    peaks = [
-        max((abs(sample) for sample in samples[index * step:(index + 1) * step]), default=0) / 32768
-        for index in range(bars)
-    ]
+    peaks = []
+    for index in range(bars):
+        chunk = samples[index * step:(index + 1) * step]
+        if not chunk:
+            peaks.append(0.0)
+            continue
+        # Some laptop codecs carry a large fixed DC bias. It sounds like
+        # silence after a high-pass filter but otherwise paints a flat meter.
+        center = sum(chunk) / len(chunk)
+        peaks.append(max(abs(sample - center) for sample in chunk) / 32768)
     # Older audio first so the bars scroll left to right like a waveform.
     return {"bars": [round(peak, 3) for peak in peaks], "peak": round(max(peaks), 3)}
 
 
 class Recorder:
-    """Owns the null sink, the two loopbacks and the ffmpeg process."""
-
+    """Owns a direct microphone capture, system-audio loopback and ffmpeg."""
     def __init__(self, wav_path=WAV_PATH):
         self.wav_path = wav_path
         self.proc = None
@@ -172,15 +177,15 @@ class Recorder:
         self.on_stop = None
 
     def _prepare_source(self, microphone):
-        """Make the requested microphone actually capable of capturing.
+        """Return a concrete input source, switching Bluetooth to HFP if needed.
 
-        A Bluetooth headset in A2DP publishes an input source that only ever
-        returns silence, so the recording would come out empty. Switch such a
-        card to a profile that has a real capture device and remember the old
-        profile for teardown.
+        PipeWire keeps a Bluetooth headset in headset mode only while a real
+        client captures its source.  A PulseAudio loopback is insufficient and
+        WirePlumber switches it back to A2DP after a couple of seconds.
         """
+        microphone = microphone or pactl("get-default-source")
         if not microphone:
-            return
+            raise AppError("No microphone is selected. Connect one and try again.")
         device = next((mic for mic in microphones() if mic["id"] == microphone), None)
         if device is None:
             raise AppError(
@@ -189,7 +194,7 @@ class Recorder:
         if device["needs_profile"] is None:
             if not device["available"]:
                 raise AppError(f"{device['label']} has no microphone to record from.")
-            return
+            return microphone
         card_name = _source_card(microphone)
         card = next((card for card in _cards() if card.get("name") == card_name), None)
         if card is None:
@@ -201,7 +206,7 @@ class Recorder:
         deadline = time.time() + 5.0
         while time.time() < deadline:
             if any(mic["id"] == microphone and mic["needs_profile"] is None for mic in microphones()):
-                return
+                return microphone
             time.sleep(0.2)
         raise AppError(
             f"{device['label']} did not provide a microphone after switching to "
@@ -222,14 +227,13 @@ class Recorder:
                     "On this platform, upload an audio file instead."
                 )
             try:
-                self._prepare_source(microphone)
+                microphone = self._prepare_source(microphone)
                 self.modules["sink"] = pactl(
                     "load-module", "module-null-sink", f"sink_name={SINK_NAME}",
                     "sink_properties=device.description=MeetingRec",
                 )
-                self.modules["loop1"] = pactl(
-                    "load-module", "module-loopback", f"source={microphone or '@DEFAULT_SOURCE@'}", f"sink={SINK_NAME}"
-                )
+                # The microphone goes directly to ffmpeg: PipeWire then keeps
+                # a Bluetooth headset in its capture-capable HFP profile.
                 self.modules["loop2"] = pactl(
                     "load-module", "module-loopback",
                     "source=@DEFAULT_SINK@.monitor", f"sink={SINK_NAME}",
@@ -241,7 +245,13 @@ class Recorder:
                 # previous session's leftover audio before ffmpeg gets to it.
                 self.wav_path.unlink(missing_ok=True)
                 self.proc = subprocess.Popen([
-                    "ffmpeg", "-y", "-f", "pulse", "-i", f"{SINK_NAME}.monitor",
+                    "ffmpeg", "-y",
+                    "-f", "pulse", "-i", microphone,
+                    "-f", "pulse", "-i", f"{SINK_NAME}.monitor",
+                    "-filter_complex",
+                    "[0:a]highpass=f=70,lowpass=f=7600[mic];"
+                    "[mic][1:a]amix=inputs=2:duration=longest:normalize=0,"
+                    "alimiter=limit=0.95,aresample=async=1",
                     "-ac", "1", "-ar", SAMPLE_RATE, "-c:a", "pcm_s16le",
                     "-flush_packets", "1", str(self.wav_path),
                 ])

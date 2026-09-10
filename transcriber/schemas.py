@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 class StartReq(BaseModel):
     language: str = "cs"
-    live: bool = True
+    live: bool = False
     microphone: str = ""
 
 
