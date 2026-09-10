@@ -62,8 +62,12 @@ function fillMicrophones(result, selected = '') {
   const select = $('custom-microphone');
   select.replaceChildren(new Option('System default', ''));
   (result.microphones || []).forEach(device => {
-    const suffix = device.default ? ' — system default' : '';
-    select.append(new Option(device.label + suffix, device.id));
+    const label = device.note ? device.label + ' — ' + device.note
+      : device.needs_profile ? device.label + ' — needs headset mode (switched automatically)'
+      : device.label + (device.default ? ' — system default' : '');
+    const option = new Option(label, device.id);
+    option.disabled = device.available === false;
+    select.append(option);
   });
   if (selected && ![...select.options].some(option => option.value === selected)) {
     select.append(new Option('Previously selected microphone (not connected)', selected));

@@ -206,7 +206,17 @@ def test_recorder_sets_and_clears_started_at_across_start_stop(monkeypatch, tmp_
     wav_path = tmp_path / "recording.wav"
     recorder = recorder_module.Recorder(wav_path)
     pactl_calls = []
-    monkeypatch.setattr(recorder_module, "pactl", lambda *args: pactl_calls.append(args) or "42")
+    sources = [{"name": "usb-microphone", "description": "USB Microphone", "properties": {}}]
+
+    def pactl(*args):
+        pactl_calls.append(args)
+        if args == ("-f", "json", "list", "sources"):
+            return json.dumps(sources)
+        if args == ("-f", "json", "list", "cards"):
+            return json.dumps([])
+        return "42"
+
+    monkeypatch.setattr(recorder_module, "pactl", pactl)
     monkeypatch.setattr(
         recorder_module.subprocess, "Popen",
         lambda *args, **kwargs: SimpleNamespace(send_signal=lambda sig: None, wait=lambda: wav_path.write_bytes(b"RIFF")),
@@ -237,8 +247,10 @@ def test_microphones_excludes_output_monitors_and_marks_default(monkeypatch):
     )
 
     assert recorder_module.microphones() == [
-        {"id": "built-in-mic", "label": "Digital Microphone", "default": False},
-        {"id": "usb-mic", "label": "USB Microphone", "default": True},
+        {"id": "built-in-mic", "label": "Digital Microphone", "default": False,
+         "available": True, "needs_profile": None, "note": None},
+        {"id": "usb-mic", "label": "USB Microphone", "default": True,
+         "available": True, "needs_profile": None, "note": None},
     ]
 
 

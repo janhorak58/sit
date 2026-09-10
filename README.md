@@ -50,6 +50,17 @@ newest segment is highlighted; reading older text does not auto-scroll.
 Lag over five seconds shows the transcription status. No segments are skipped
 due to slow processing.
 
+A level meter under the recording toolbar shows what is actually being
+captured, and says so when nothing is: *No sound is reaching the recording —
+check the selected microphone.*
+
+A Bluetooth headset only has a microphone in its headset (HFP/HSP) profile; in
+A2DP the system still offers a `bluez_input` source that records pure silence.
+SIT switches such a device to a capture-capable profile when the recording
+starts and restores the previous profile when it stops. Devices with no
+capture profile at all are listed as unusable instead of silently recording
+nothing.
+
 This is a running preview that may change, without speaker recognition yet.
 **Stop & Save** saves the audio and automatically starts a full transcription
 including speaker recognition (unless the speaker count is set to 1). A

@@ -110,6 +110,10 @@ function setBadge(data) {
   badge.querySelector('b').textContent = data.label;
 }
 
+function refreshBadge() {
+  return api.asrStatus().then(setBadge).catch(() => setBadge({available: false, label: 'Local model'}));
+}
+
 function openLibrary(folder) {
   state.currentFolder = folder || '';
   window.dispatchEvent(new CustomEvent('transcriber:open-folder', {detail: state.currentFolder}));
@@ -173,6 +177,13 @@ async function refreshProjects() {
   renderProjects(projects);
 }
 
+function microphoneLabel(device) {
+  if (device.note) return device.label + ' — ' + device.note;
+  // A Bluetooth headset in A2DP records silence until its profile switches.
+  if (device.needs_profile) return device.label + ' — needs headset mode (switched automatically)';
+  return device.label + (device.default ? ' — system default' : '');
+}
+
 async function refreshMicrophones() {
   const preferred = getPreferences()?.recording.microphone || '';
   const selected = $('record-microphone').value || preferred;
@@ -180,8 +191,9 @@ async function refreshMicrophones() {
   const select = $('record-microphone');
   select.replaceChildren(new Option('System default', ''));
   (result.microphones || []).forEach(device => {
-    const suffix = device.default ? ' — system default' : '';
-    select.append(new Option(device.label + suffix, device.id));
+    const option = new Option(microphoneLabel(device), device.id);
+    option.disabled = device.available === false;
+    select.append(option);
   });
   if (selected && ![...select.options].some(option => option.value === selected)) {
     select.append(new Option('Previously selected microphone (not connected)', selected));
@@ -450,7 +462,9 @@ export function initWizard() {
     button.onclick = () => go(Number(button.dataset.step));
   });
   $('live-toggle').checked = loadLiveToggle();
-  api.asrStatus().then(setBadge).catch(() => setBadge({available: false, label: 'Local model'}));
+  refreshBadge();
+  // Saving Connections can flip the engine between Spark and the local model.
+  window.addEventListener('transcriber:connections-changed', refreshBadge);
   window.addEventListener('transcriber:preferences-changed', applyPreferences);
   refreshProjects();
   refreshMicrophones();

@@ -7,7 +7,7 @@ from ..errors import AppError
 from ..library import store_recording
 from ..live import live
 from ..paths import rel_to_data
-from ..recorder import microphones, recorder
+from ..recorder import capture_levels, microphones, recorder
 from ..schemas import StartReq, StopReq
 
 router = APIRouter()
@@ -53,6 +53,8 @@ def status():
         "max_seconds": MAX_RECORDING_SECONDS,
         "available": not recorder.is_recording and WAV_PATH.exists(),
         "live": live.snapshot(),
+        # Drives the waveform meter, so the user can see the microphone work.
+        "levels": capture_levels(WAV_PATH) if recorder.is_recording else None,
     }
 
 

@@ -1,5 +1,6 @@
 """PulseAudio + ffmpeg capture of microphone and system output into one wav."""
 
+import array
 import json
 import signal
 import subprocess
@@ -31,25 +32,128 @@ def pactl(*args):
         ) from exc
 
 
-def microphones():
-    """List physical PulseAudio/PipeWire input sources for user selection."""
+def _pactl_list(*args):
+    """A pactl JSON listing, or [] when the payload is not a list at all."""
     try:
-        default = pactl("get-default-source")
-        sources = json.loads(pactl("-f", "json", "list", "sources"))
+        payload = json.loads(pactl("-f", "json", *args))
     except (AppError, json.JSONDecodeError, TypeError):
         return []
+    return payload if isinstance(payload, list) else []
+
+
+def _cards():
+    """Sound cards as pactl reports them, or [] when the server is unusable."""
+    return _pactl_list("list", "cards")
+
+
+def _input_profile(card):
+    """An available profile of ``card`` that exposes a capture device.
+
+    A Bluetooth headset in A2DP still publishes a ``bluez_input`` source, but
+    that profile carries no microphone and the source returns digital silence.
+    The headset (HFP/HSP) profiles are the ones that actually capture.
+    """
+    profiles = card.get("profiles") or {}
+    usable = [
+        name for name, profile in profiles.items()
+        if profile.get("available", True) and (profile.get("sources") or 0) > 0
+    ]
+    if not usable:
+        return None
+    # Prefer the profile that keeps playback working too, then the shortest
+    # name, which is the plain variant rather than a codec-specific one.
+    return min(usable, key=lambda name: (-(profiles[name].get("sinks") or 0), len(name), name))
+
+
+def _capture_state(cards):
+    """Per card name: (has a capture device now, profile that would provide one)."""
+    state = {}
+    for card in cards:
+        profiles = card.get("profiles") or {}
+        active = profiles.get(card.get("active_profile") or "") or {}
+        state[card.get("name")] = (
+            (active.get("sources") or 0) > 0,
+            _input_profile(card),
+        )
+    return state
+
+
+def _sources():
+    return _pactl_list("list", "sources")
+
+
+def _source_card(name):
+    """Name of the card owning input source ``name``, or "" when unknown."""
+    for source in _sources():
+        if source.get("name") == name:
+            return (source.get("properties") or {}).get("device.name") or ""
+    return ""
+
+
+def microphones():
+    """List physical input sources, flagging the ones that cannot capture."""
+    try:
+        default = pactl("get-default-source")
+    except AppError:
+        return []
+    sources = _sources()
+    capture = _capture_state(_cards())
     devices = []
     for source in sources:
         name = str(source.get("name") or "")
         properties = source.get("properties") or {}
         if not name or name.endswith(".monitor") or properties.get("device.class") == "monitor":
             continue
+        card = properties.get("device.name") or ""
+        # Cards pactl does not report at all are assumed to work; only a known
+        # card with a known input-less active profile is flagged.
+        ready, profile = capture.get(card, (True, None))
         devices.append({
             "id": name,
             "label": source.get("description") or properties.get("device.description") or name,
             "default": name == default,
+            "available": bool(ready or profile),
+            "needs_profile": None if ready else profile,
+            "note": None if ready or profile else "This device has no microphone in any profile.",
         })
     return devices
+
+
+
+# Enough tail to look like a waveform at the 250 ms status poll, cheap enough
+# to read on every one: 0.75 s of 16 kHz mono s16le is 24 kB.
+LEVEL_WINDOW_SECONDS = 0.75
+# ffmpeg's pcm_s16le wav header; skipping it keeps the tail read frame-aligned.
+WAV_HEADER_BYTES = 44
+LEVEL_BARS = 28
+
+
+def capture_levels(path, bars=LEVEL_BARS):
+    """Per-bar peak (0..1) over the tail of a growing capture, newest last."""
+    empty = {"bars": [0.0] * bars, "peak": 0.0}
+    frame_rate = int(SAMPLE_RATE)
+    window = int(frame_rate * LEVEL_WINDOW_SECONDS) * 2
+    try:
+        size = path.stat().st_size
+        if size <= WAV_HEADER_BYTES:
+            return empty
+        with path.open("rb") as handle:
+            start = max(WAV_HEADER_BYTES, size - window)
+            handle.seek(start - (start - WAV_HEADER_BYTES) % 2)
+            data = handle.read(window)
+    except OSError:
+        return empty
+    samples = array.array("h")
+    samples.frombytes(data[: len(data) // 2 * 2])
+    if not samples:
+        return empty
+    step = max(1, len(samples) // bars)
+    peaks = [
+        max((abs(sample) for sample in samples[index * step:(index + 1) * step]), default=0) / 32768
+        for index in range(bars)
+    ]
+    # Older audio first so the bars scroll left to right like a waveform.
+    return {"bars": [round(peak, 3) for peak in peaks], "peak": round(max(peaks), 3)}
 
 
 class Recorder:
@@ -60,10 +164,49 @@ class Recorder:
         self.proc = None
         self.started_at = None
         self.modules = {"sink": None, "loop1": None, "loop2": None}
+        # (card, profile) to put back after a capture-only profile switch.
+        self.restore_profile = None
         self._lock = threading.Lock()
         # Called under the capture lock before another recording can start.
         # The callback only signals live transcription; it must not wait for ASR.
         self.on_stop = None
+
+    def _prepare_source(self, microphone):
+        """Make the requested microphone actually capable of capturing.
+
+        A Bluetooth headset in A2DP publishes an input source that only ever
+        returns silence, so the recording would come out empty. Switch such a
+        card to a profile that has a real capture device and remember the old
+        profile for teardown.
+        """
+        if not microphone:
+            return
+        device = next((mic for mic in microphones() if mic["id"] == microphone), None)
+        if device is None:
+            raise AppError(
+                "The selected microphone is not available. Reconnect it or pick another one."
+            )
+        if device["needs_profile"] is None:
+            if not device["available"]:
+                raise AppError(f"{device['label']} has no microphone to record from.")
+            return
+        card_name = _source_card(microphone)
+        card = next((card for card in _cards() if card.get("name") == card_name), None)
+        if card is None:
+            raise AppError(f"{device['label']} has no microphone in its current mode.")
+        previous = card.get("active_profile")
+        pactl("set-card-profile", card["name"], device["needs_profile"])
+        self.restore_profile = (card["name"], previous)
+        # The capture device appears asynchronously after the switch.
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            if any(mic["id"] == microphone and mic["needs_profile"] is None for mic in microphones()):
+                return
+            time.sleep(0.2)
+        raise AppError(
+            f"{device['label']} did not provide a microphone after switching to "
+            f"{device['needs_profile']}. Pick another microphone."
+        )
 
     @property
     def is_recording(self):
@@ -79,6 +222,7 @@ class Recorder:
                     "On this platform, upload an audio file instead."
                 )
             try:
+                self._prepare_source(microphone)
                 self.modules["sink"] = pactl(
                     "load-module", "module-null-sink", f"sink_name={SINK_NAME}",
                     "sink_properties=device.description=MeetingRec",
@@ -136,6 +280,11 @@ class Recorder:
             if self.modules[key]:
                 subprocess.run(["pactl", "unload-module", self.modules[key]], check=False)
                 self.modules[key] = None
+        if self.restore_profile:
+            card, profile = self.restore_profile
+            self.restore_profile = None
+            if profile:
+                subprocess.run(["pactl", "set-card-profile", card, profile], check=False)
         if was_recording and self.on_stop is not None:
             self.on_stop()
         return self.wav_path.exists()

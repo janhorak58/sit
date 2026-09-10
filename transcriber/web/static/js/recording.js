@@ -13,7 +13,37 @@ function defaultLive() {
   return {session_id: null, state: 'idle', segments: [], audio_seconds: 0, processed_seconds: 0, error: null, language: ''};
 }
 
-export const recording = {active: false, startedAt: null, maxSeconds: null, available: false, live: defaultLive()};
+export const recording = {active: false, startedAt: null, maxSeconds: null, available: false, levels: null, live: defaultLive()};
+
+// The meter is the user's proof that the selected microphone is being heard.
+const WAVE_BARS = 28;
+const SILENT_PEAK = 0.004;
+const SILENT_SECONDS = 4;
+let quietSince = null;
+
+function renderWave() {
+  const wave = $('record-wave');
+  const note = $('record-meter-note');
+  if (!wave) return;
+  if (wave.children.length !== WAVE_BARS) {
+    wave.replaceChildren(...Array.from({length: WAVE_BARS}, () => document.createElement('i')));
+  }
+  const bars = recording.levels?.bars || [];
+  [...wave.children].forEach((bar, index) => {
+    const level = Number(bars[index]) || 0;
+    // sqrt keeps quiet speech visible without letting peaks saturate.
+    bar.style.height = Math.max(6, Math.round(Math.sqrt(level) * 100)) + '%';
+  });
+  if (!recording.active) { quietSince = null; return; }
+  const peak = Number(recording.levels?.peak) || 0;
+  if (peak > SILENT_PEAK) quietSince = null;
+  else if (quietSince === null) quietSince = Date.now();
+  const quietFor = quietSince === null ? 0 : (Date.now() - quietSince) / 1000;
+  wave.classList.toggle('silent', quietFor > SILENT_SECONDS);
+  note.textContent = quietFor > SILENT_SECONDS
+    ? 'No sound is reaching the recording — check the selected microphone.'
+    : 'Microphone and system audio are being recorded.';
+}
 
 let timerId = null;
 // Requests can resolve out of order (slow poll from a session that has since
@@ -42,6 +72,7 @@ function render() {
   const indicator = $('recording-indicator');
   indicator.hidden = !recording.active;
   if (recording.active) $('recording-indicator-timer').textContent = clock(elapsedSeconds());
+  renderWave();
 }
 
 function publish() {
@@ -71,6 +102,7 @@ export function setRecording(active, startedAt = Date.now()) {
   recording.active = active;
   recording.startedAt = active ? startedAt : null;
   recording.available = false;
+  recording.levels = null;
   recording.live = defaultLive();
   appliedToken = token;
   publish();
@@ -91,6 +123,7 @@ async function poll() {
     recording.startedAt = status.recording ? status.started_at : null;
     recording.maxSeconds = status.max_seconds ?? recording.maxSeconds;
     recording.available = Boolean(status.available);
+    recording.levels = status.levels || null;
     recording.live = normalizeLive(status.live);
     publish();
   } finally {

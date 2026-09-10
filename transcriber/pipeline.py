@@ -83,7 +83,7 @@ def remote_diarizer_status():
     """Probe the configured Spark diarizer without loading the local model."""
     endpoint = get_connection("diarization")["endpoint"]
     if not endpoint:
-        return {"available": False, "backend": "local", "last_error": None}
+        return {"available": False, "backend": "local", "off": True, "last_error": None}
     health_url = endpoint.removesuffix("/v1/audio/diarizations").rstrip("/") + "/health"
     try:
         response = httpx.get(health_url, timeout=2.0)

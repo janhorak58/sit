@@ -184,6 +184,8 @@ async function applyConnections() {
   fillConnectionForm(currentConnections);
   showEndpoints(result.endpoints);
   showSecrets(currentConnections);
+  // The sidebar engine badge is resolved from these endpoints.
+  window.dispatchEvent(new CustomEvent('transcriber:connections-changed', {detail: result.connections}));
   return result;
 }
 

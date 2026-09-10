@@ -197,6 +197,13 @@ def diagnose():
         "probe": remote_status(),
         "last_error": _last_remote_error,
     }
+    if not connection["endpoint"]:
+        report["upload"] = {
+            "ok": False,
+            "off": True,
+            "detail": "No remote endpoint is configured; transcription runs on the local model.",
+        }
+        return report
     try:
         with tempfile.TemporaryDirectory() as tmp:
             probe = Path(tmp) / "probe.mp3"

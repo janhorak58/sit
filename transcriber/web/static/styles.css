@@ -429,6 +429,12 @@ button.icon { padding: 3px 7px; border: 0; color: var(--muted); background: tran
 .status-line.pending { display: flex; align-items: center; gap: 8px; }
 @keyframes connection-spin { to { transform: rotate(360deg); } }
 button[aria-busy="true"] { opacity: .7; }
+.record-meter { padding: 14px 16px; display: grid; gap: 9px; border: 1px solid var(--line); background: var(--soft); }
+.record-wave { height: 46px; display: flex; align-items: flex-end; gap: 3px; }
+.record-wave i { flex: 1 1 0; min-width: 2px; height: 6%; background: var(--primary); transition: height .12s linear; }
+.record-wave.silent i { background: #c9ccd2; }
+.record-meter-note { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.record-wave.silent + .record-meter-note { color: var(--red); font-weight: 650; }
 .connection-actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 5px 2px; }
 .connections-results-head { margin: 0 0 14px; }
 .connections-results-head h2 { margin: -2px 0 0; font-size: 19px; letter-spacing: -.03em; }
@@ -536,4 +542,5 @@ button[aria-busy="true"] { opacity: .7; }
   .source-card, #fill { transition: none; }
   .meeting-progress-bar.indeterminate i { position: static; width: 100%; animation: none; }
   .connection-result.pending::before, .status-line.pending::before { animation: none; }
+  .record-wave i { transition: none; }
 }
