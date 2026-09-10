@@ -1,7 +1,8 @@
 import {$} from './dom.js';
+import {initCustomizations, loadCustomizations} from './customizations.js';
 import {createFolder, initLibrary, loadDashboard, loadLibrary} from './library.js';
 import {closeMeeting, openMeeting} from './meeting.js';
-import {loadSettings} from './settings.js';
+import {initSettings, loadSettings} from './settings.js';
 import {state} from './state.js';
 import {initViews} from './views.js';
 import {initWizard, prepareNewRecording} from './wizard.js';
@@ -28,6 +29,9 @@ $('workspace-view-mode').onclick = () => {
 };
 
 initLibrary();
+initCustomizations();
+loadCustomizations();
+initSettings();
 initWizard();
 initViews(view => {
   if (view === 'new') prepareNewRecording();
@@ -35,6 +39,7 @@ initViews(view => {
   if (view === 'library') loadLibrary();
   if (view === 'settings') loadSettings();
   if (view === 'workspace' && !state.workspace) location.hash = '#new';
+  if (view === 'customizations') loadCustomizations();
   if (view !== 'meeting') closeMeeting();
 });
 

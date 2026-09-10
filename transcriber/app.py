@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.types import Scope
 
 from .config import STATIC_DIR, ensure_dirs
+from .connections import tunnels
 from .errors import AppError
 from .recorder import recorder
 from .routes import routers
@@ -29,10 +30,12 @@ class NoCacheStaticFiles(StaticFiles):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    tunnels.start()
     try:
         yield
     finally:
         recorder.stop()
+        tunnels.stop()
 
 
 def create_app():

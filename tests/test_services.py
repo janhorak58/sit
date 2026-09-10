@@ -205,7 +205,8 @@ def test_recorder_sets_and_clears_started_at_across_start_stop(monkeypatch, tmp_
 
     wav_path = tmp_path / "recording.wav"
     recorder = recorder_module.Recorder(wav_path)
-    monkeypatch.setattr(recorder_module, "pactl", lambda *args: "42")
+    pactl_calls = []
+    monkeypatch.setattr(recorder_module, "pactl", lambda *args: pactl_calls.append(args) or "42")
     monkeypatch.setattr(
         recorder_module.subprocess, "Popen",
         lambda *args, **kwargs: SimpleNamespace(send_signal=lambda sig: None, wait=lambda: wav_path.write_bytes(b"RIFF")),
@@ -213,11 +214,32 @@ def test_recorder_sets_and_clears_started_at_across_start_stop(monkeypatch, tmp_
     monkeypatch.setattr(recorder_module.subprocess, "run", lambda *args, **kwargs: None)
 
     assert recorder.started_at is None
-    recorder.start()
+    recorder.start("usb-microphone")
     assert recorder.started_at is not None
+    assert any("source=usb-microphone" in call for args in pactl_calls for call in args)
 
     recorder.stop()
     assert recorder.started_at is None
+
+
+def test_microphones_excludes_output_monitors_and_marks_default(monkeypatch):
+    from transcriber import recorder as recorder_module
+
+    sources = [
+        {"name": "speaker.monitor", "description": "Monitor", "properties": {"device.class": "monitor"}},
+        {"name": "built-in-mic", "description": "Digital Microphone", "properties": {"device.class": "sound"}},
+        {"name": "usb-mic", "description": "USB Microphone", "properties": {"device.class": "sound"}},
+    ]
+    monkeypatch.setattr(
+        recorder_module,
+        "pactl",
+        lambda *args: "usb-mic" if args == ("get-default-source",) else json.dumps(sources),
+    )
+
+    assert recorder_module.microphones() == [
+        {"id": "built-in-mic", "label": "Digital Microphone", "default": False},
+        {"id": "usb-mic", "label": "USB Microphone", "default": True},
+    ]
 
 
 def test_recorder_auto_stops_after_max_duration(monkeypatch, tmp_path):
@@ -318,11 +340,15 @@ def test_run_pipeline_writes_meeting_json_with_segments(monkeypatch, tmp_path):
 def test_diarize_loader_explains_missing_huggingface_token(monkeypatch):
     from transcriber import models
 
-    monkeypatch.setattr(models, "HF_TOKEN", "")
+    monkeypatch.setattr(
+        models,
+        "get_connection",
+        lambda name: {"local_model": "pyannote/speaker-diarization-3.1", "hf_token": ""},
+    )
     try:
         models.get_diarize_pipeline()
     except RuntimeError as exc:
-        assert "HF_TOKEN" in str(exc)
+        assert "HuggingFace" in str(exc)
         assert "pyannote" in str(exc)
     else:
         raise AssertionError("diarization loaded without a HuggingFace token")
@@ -395,7 +421,11 @@ def test_rerun_diarization_relabels_existing_segments_without_asr(monkeypatch, t
 def test_label_speakers_prefers_spark_diarizer(monkeypatch, tmp_path):
     from transcriber import pipeline as pipeline_module
 
-    monkeypatch.setattr(pipeline_module, "SPARK_DIARIZER_URL", "http://spark/diarize")
+    monkeypatch.setattr(
+        pipeline_module,
+        "get_connection",
+        lambda name: {"endpoint": "http://spark/diarize", "local_model": "pyannote-local"},
+    )
     monkeypatch.setattr(
         pipeline_module,
         "_remote_speaker_turns",
@@ -424,7 +454,11 @@ def test_label_speakers_prefers_spark_diarizer(monkeypatch, tmp_path):
 def test_label_speakers_falls_back_locally_when_spark_fails(monkeypatch, tmp_path):
     from transcriber import pipeline as pipeline_module
 
-    monkeypatch.setattr(pipeline_module, "SPARK_DIARIZER_URL", "http://spark/diarize")
+    monkeypatch.setattr(
+        pipeline_module,
+        "get_connection",
+        lambda name: {"endpoint": "http://spark/diarize", "local_model": "pyannote-local"},
+    )
     monkeypatch.setattr(
         pipeline_module,
         "_remote_speaker_turns",
@@ -547,7 +581,7 @@ def test_read_summary_json_falls_back_to_existing_markdown(monkeypatch, tmp_path
     assert library.read_summary_json("meeting.txt") == {"markdown": "## Summary\nHotovo."}
 
 
-def test_rename_speaker_updates_meeting_json_and_reflows_txt(monkeypatch, tmp_path):
+def test_update_transcript_marks_existing_brief_as_stale(monkeypatch, tmp_path):
     from transcriber import library, paths
 
     monkeypatch.setattr(library, "DATA_DIR", tmp_path)
@@ -560,71 +594,47 @@ def test_rename_speaker_updates_meeting_json_and_reflows_txt(monkeypatch, tmp_pa
             {"start": 1, "end": 2, "text": "Hello.", "speaker": "SPEAKER_01"},
         ],
     }))
+    (tmp_path / "meeting.summary.md").write_text("stale brief")
+    (tmp_path / "meeting.summary.json").write_text("{}")
 
-    result = library.rename_speaker("meeting.txt", "SPEAKER_00", "Jan")
-    assert result["segments"][0]["speaker"] == "Jan"
-    assert result["segments"][1]["speaker"] == "SPEAKER_01"
+    result = library.update_transcript("meeting.txt", [
+        {"text": "Ahoj.", "speaker": "Jan"},
+        {"text": "Nazdar.", "speaker": None},
+    ])
 
-    persisted = json.loads((tmp_path / "meeting.meeting.json").read_text())
-    assert persisted["segments"][0]["speaker"] == "Jan"
-    assert (tmp_path / "meeting.txt").read_text() == "[Jan]\nHi.\n\n[SPEAKER_01]\nHello."
+    assert result["segments"] == [
+        {"start": 0, "end": 1, "text": "Ahoj.", "speaker": "Jan"},
+        {"start": 1, "end": 2, "text": "Nazdar.", "speaker": None},
+    ]
+    assert (tmp_path / "meeting.txt").read_text() == "[Jan]\nAhoj.\nNazdar."
+    assert json.loads((tmp_path / "meeting.meeting.json").read_text())["analysis_stale"] is True
+    assert (tmp_path / "meeting.summary.md").read_text() == "stale brief"
+    assert (tmp_path / "meeting.summary.json").read_text() == "{}"
 
 
-def test_rename_speaker_rejects_name_already_used_in_meeting(monkeypatch, tmp_path):
+def test_rename_speakers_relabels_every_cue_of_that_speaker(monkeypatch, tmp_path):
     from transcriber import library, paths
 
     monkeypatch.setattr(library, "DATA_DIR", tmp_path)
     monkeypatch.setattr(paths, "DATA_DIR", tmp_path)
-    (tmp_path / "meeting.txt").write_text("unchanged")
-    meeting_path = tmp_path / "meeting.meeting.json"
-    meeting_path.write_text(json.dumps({
+    (tmp_path / "meeting.txt").write_text("old")
+    (tmp_path / "meeting.meeting.json").write_text(json.dumps({
+        "version": 1,
         "segments": [
-            {"start": 0, "end": 1, "text": "Hi.", "speaker": "Jan"},
-            {"start": 1, "end": 2, "text": "Hello.", "speaker": "Eva"},
+            {"start": 0, "end": 1, "text": "Hi.", "speaker": "SPEAKER_00"},
+            {"start": 1, "end": 2, "text": "Hello.", "speaker": "SPEAKER_01"},
+            {"start": 2, "end": 3, "text": "Again.", "speaker": "SPEAKER_00"},
         ],
     }))
 
-    try:
-        library.rename_speaker("meeting.txt", "Eva", "Jan")
-    except AppError as exc:
-        assert "already exists in this meeting" in str(exc)
-    else:
-        raise AssertionError("duplicate speaker name was accepted")
-    assert (tmp_path / "meeting.txt").read_text() == "unchanged"
-    assert json.loads(meeting_path.read_text())["segments"][1]["speaker"] == "Eva"
+    result = library.rename_speakers("meeting.txt", {"SPEAKER_00": " Jan ", "SPEAKER_01": ""})
 
-
-def test_rename_speaker_rejects_unknown_speaker(monkeypatch, tmp_path):
-    from transcriber import library, paths
-
-    monkeypatch.setattr(library, "DATA_DIR", tmp_path)
-    monkeypatch.setattr(paths, "DATA_DIR", tmp_path)
-    (tmp_path / "meeting.txt").write_text("hi")
-    (tmp_path / "meeting.meeting.json").write_text(json.dumps({
-        "segments": [{"start": 0, "end": 1, "text": "Hi.", "speaker": "SPEAKER_00"}],
-    }))
-
-    try:
-        library.rename_speaker("meeting.txt", "SPEAKER_99", "Jan")
-    except AppError:
-        pass
-    else:
-        raise AssertionError("renaming an unknown speaker was accepted")
-
-
-def test_rename_speaker_requires_existing_meeting_json(monkeypatch, tmp_path):
-    from transcriber import library, paths
-
-    monkeypatch.setattr(library, "DATA_DIR", tmp_path)
-    monkeypatch.setattr(paths, "DATA_DIR", tmp_path)
-    (tmp_path / "meeting.txt").write_text("hi")
-
-    try:
-        library.rename_speaker("meeting.txt", "SPEAKER_00", "Jan")
-    except AppError:
-        pass
-    else:
-        raise AssertionError("rename without segments was accepted")
+    assert [segment["speaker"] for segment in result["segments"]] == ["Jan", "SPEAKER_01", "Jan"]
+    assert result["renamed"] == 2
+    assert (tmp_path / "meeting.txt").read_text() == (
+        "[Jan]\nHi.\n\n[SPEAKER_01]\nHello.\n\n[Jan]\nAgain."
+    )
+    assert json.loads((tmp_path / "meeting.meeting.json").read_text())["analysis_stale"] is True
 
 
 def test_delete_transcript_removes_structured_meeting_sidecar(monkeypatch, tmp_path):
@@ -739,3 +749,70 @@ def test_meeting_json_records_engine_provenance(monkeypatch, tmp_path):
     }
     assert meta["diarization"]["applied"] is False
     assert meta["duration"] == 3.0 and meta["created_at"]
+
+
+def test_preferences_are_merged_and_persisted(monkeypatch, tmp_path):
+    from transcriber import preferences
+
+    monkeypatch.setattr(preferences, "PREFERENCES_PATH", tmp_path / "preferences.json")
+
+    saved = preferences.save_preferences({
+        "recording": {"language": "en", "live_enabled": False},
+        "brief": {"detail": "detailed", "sections": {"risks": False}},
+    })
+
+    assert saved["recording"]["language"] == "en"
+    assert saved["recording"]["live_enabled"] is False
+    assert saved["recording"]["speaker_count"] == ""
+    assert preferences.get_preferences()["brief"]["sections"]["risks"] is False
+
+
+def test_brief_preferences_remove_disabled_sections():
+    from transcriber.routes.workflow import _filter_brief
+
+    data = {"summary": "recap", "risks": [{"text": "risk"}], "follow_up": "send this", "changes_since_last": ["changed"]}
+    preferences = {"brief": {"compare_previous": False, "sections": {"risks": False, "follow_up": False}}}
+
+    assert _filter_brief(data, preferences) == {
+        "summary": "recap", "risks": [], "follow_up": "", "changes_since_last": [],
+    }
+
+def test_summary_generation_returns_immediately_and_exposes_progress(monkeypatch, tmp_path):
+    import threading
+    import time
+    from transcriber import library, paths
+    from transcriber.progress import Progress
+    from transcriber.routes import workflow
+    from transcriber.schemas import SummaryReq
+
+    monkeypatch.setattr(library, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(paths, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(workflow, "progress", Progress())
+    (tmp_path / "meeting.txt").write_text("Ahoj.")
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_summary(*args):
+        started.set()
+        release.wait(1)
+        return {
+            "summary": "Hotovo.", "chapters": [], "decisions": [], "action_items": [],
+            "open_questions": [], "risks": [], "speaker_contributions": [],
+            "follow_up": "", "changes_since_last": [],
+        }
+
+    monkeypatch.setattr(workflow, "summarize", slow_summary)
+
+    assert workflow.create_summary(SummaryReq(path="meeting.txt")) == {"ok": True}
+    assert started.wait(.2)
+    assert workflow.progress.snapshot()["stage"] == "analyzing"
+    assert workflow.progress.snapshot()["source_path"] == "meeting.txt"
+
+    release.set()
+    for _ in range(100):
+        if workflow.progress.snapshot()["stage"] == "done":
+            break
+        time.sleep(.01)
+    else:
+        raise AssertionError("summary worker did not finish")
+    assert (tmp_path / "meeting.summary.json").is_file()

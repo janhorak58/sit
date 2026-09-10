@@ -18,16 +18,12 @@ from .asr import Segment, remote_status, transcribe_live as transcribe
 
 log = logging.getLogger(__name__)
 
-# Rolling contextual window: at most WINDOW_SECONDS of audio sent per pass,
-# with OVERLAP_SECONDS of trailing context carried into the next one so a
-# word split across window boundaries still has surrounding audio on one
-# side or the other. Growth during the first WINDOW_SECONDS is organic (the
-# window's end is capped to whatever audio actually exists yet), so the
-# first pass fires as soon as MIN_NEW_SECONDS is available instead of
-# waiting for a full WINDOW_SECONDS window to fill.
-WINDOW_SECONDS = 8.0
-OVERLAP_SECONDS = 6.0
-MIN_NEW_SECONDS = 2.0
+# Each draft pass waits for 10 seconds of fresh speech. Four seconds of
+# preceding context produce a 14-second ASR window: enough sentence context
+# without unstable two-second micro-transcriptions.
+WINDOW_SECONDS = 14.0
+OVERLAP_SECONDS = 4.0
+MIN_NEW_SECONDS = 10.0
 # How often the worker checks the growing wav file for enough new audio to
 # start a pass. Small: this is a stat()+maybe-header-parse, not a transcribe.
 POLL_INTERVAL = 0.15
@@ -330,14 +326,12 @@ class LiveTranscriber:
             audio_seconds = max(size - data_offset, 0) / bytes_per_sec
 
             # Rolling contextual window: start OVERLAP_SECONDS behind the
-            # last processed point (never before 0) and extend up to
-            # WINDOW_SECONDS, capped to whatever audio actually exists yet —
-            # so the very first passes grow organically (0..2, 0..4, 0..6,
-            # 0..8) instead of waiting for a full WINDOW_SECONDS window
-            # before transcribing anything. A slow backend falls behind
-            # (audio_seconds keeps growing past processed) but never skips a
-            # stretch of speech: processed only ever advances to window_end,
-            # and the next window_start still starts from there.
+            # last processed point (never before 0), then wait until there
+            # are MIN_NEW_SECONDS of fresh audio. Each regular pass therefore
+            # carries four seconds of context plus ten seconds of new speech.
+            # A slow backend falls behind (audio_seconds keeps growing past
+            # processed) but never skips a stretch of speech: processed only
+            # ever advances to window_end.
             window_start = max(0.0, processed - OVERLAP_SECONDS)
             window_end = min(audio_seconds, window_start + WINDOW_SECONDS)
             if window_end - processed < MIN_NEW_SECONDS:

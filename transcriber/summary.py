@@ -14,8 +14,26 @@ import json
 
 import httpx
 
-from .config import GPT_OSS_API_KEY, OMNIROUTE_MODEL, OMNIROUTE_URL
+from .config import GPT_OSS_API_KEY
+from .connections import get_connection
 from .errors import AppError
+
+
+def remote_status():
+    """Public reachability of the private LLM used for AI analysis."""
+    connection = get_connection("llm")
+    endpoint = connection["endpoint"]
+    if not endpoint:
+        return {"available": False, "url": None, "model": connection["model"], "last_error": "LLM endpoint is not set."}
+    headers = {"Authorization": f"Bearer {GPT_OSS_API_KEY}"} if GPT_OSS_API_KEY else None
+    try:
+        response = httpx.get(f"{endpoint.rstrip('/')}/v1/models", headers=headers, timeout=2.0)
+        # A model-list endpoint may not exist behind every gateway; anything
+        # short of a server error still proves the port is up and routing.
+        return {"available": response.status_code < 500, "url": endpoint, "model": connection["model"], "last_error": None}
+    except httpx.HTTPError as exc:
+        return {"available": False, "url": endpoint, "model": connection["model"], "last_error": str(exc)[:1000]}
+
 
 SYSTEM_PROMPT = """You extract evidence-grounded meeting intelligence from a transcript.
 Respond with ONLY a single JSON object — no prose, no Markdown, no code fences.
@@ -194,20 +212,24 @@ def _normalize(parsed, turns):
     }
 
 
-def summarize(text, project="", segments=None, previous_context=""):
+def summarize(text, project="", segments=None, previous_context="", instructions=""):
     """Ask the private LLM for evidence-grounded meeting intelligence."""
-    if not OMNIROUTE_URL:
+    connection = get_connection("llm")
+    endpoint = connection["endpoint"]
+    if not endpoint:
         raise AppError("Summaries are not configured.")
     transcript, turns = _transcript_lines(text, segments)
     context = f"Project: {project}\n\n" if project else ""
+    if instructions:
+        context += f"Brief preferences: {instructions}\n\n"
     if previous_context:
         context += f"Previous meeting context (for comparison only):\n{previous_context}\n\n"
     headers = {"Authorization": f"Bearer {GPT_OSS_API_KEY}"} if GPT_OSS_API_KEY else None
     try:
         response = httpx.post(
-            f"{OMNIROUTE_URL.rstrip('/')}/v1/chat/completions",
+            f"{endpoint.rstrip('/')}/v1/chat/completions",
             json={
-                "model": OMNIROUTE_MODEL, "stream": False,
+                "model": connection["model"], "stream": False,
                 "messages": [
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": context + "Transcript:\n" + transcript},

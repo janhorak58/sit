@@ -1,5 +1,6 @@
 """PulseAudio + ffmpeg capture of microphone and system output into one wav."""
 
+import json
 import signal
 import subprocess
 import sys
@@ -30,6 +31,27 @@ def pactl(*args):
         ) from exc
 
 
+def microphones():
+    """List physical PulseAudio/PipeWire input sources for user selection."""
+    try:
+        default = pactl("get-default-source")
+        sources = json.loads(pactl("-f", "json", "list", "sources"))
+    except (AppError, json.JSONDecodeError, TypeError):
+        return []
+    devices = []
+    for source in sources:
+        name = str(source.get("name") or "")
+        properties = source.get("properties") or {}
+        if not name or name.endswith(".monitor") or properties.get("device.class") == "monitor":
+            continue
+        devices.append({
+            "id": name,
+            "label": source.get("description") or properties.get("device.description") or name,
+            "default": name == default,
+        })
+    return devices
+
+
 class Recorder:
     """Owns the null sink, the two loopbacks and the ffmpeg process."""
 
@@ -47,7 +69,7 @@ class Recorder:
     def is_recording(self):
         return self.proc is not None
 
-    def start(self):
+    def start(self, microphone=""):
         with self._lock:
             if self.is_recording:
                 raise AppError("Recording is already running.")
@@ -62,7 +84,7 @@ class Recorder:
                     "sink_properties=device.description=MeetingRec",
                 )
                 self.modules["loop1"] = pactl(
-                    "load-module", "module-loopback", "source=@DEFAULT_SOURCE@", f"sink={SINK_NAME}"
+                    "load-module", "module-loopback", f"source={microphone or '@DEFAULT_SOURCE@'}", f"sink={SINK_NAME}"
                 )
                 self.modules["loop2"] = pactl(
                     "load-module", "module-loopback",

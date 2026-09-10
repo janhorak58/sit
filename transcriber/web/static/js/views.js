@@ -6,6 +6,7 @@ const ROUTES = {
   '#archive': 'library',
   '#meeting': 'meeting',
   '#settings': 'settings',
+  '#customizations': 'customizations',
 };
 
 export function showView(name) {

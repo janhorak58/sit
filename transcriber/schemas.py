@@ -7,6 +7,7 @@ from pydantic import BaseModel
 class StartReq(BaseModel):
     language: str = "cs"
     live: bool = True
+    microphone: str = ""
 
 
 class StopReq(BaseModel):
@@ -53,9 +54,26 @@ class SuggestReq(BaseModel):
 class SummaryReq(BaseModel):
     path: str
     project: str = ""
+    preferences: dict | None = None
 
 
-class RenameSpeakerReq(BaseModel):
+class SegmentEdit(BaseModel):
+    text: str
+    speaker: str | None = None
+
+
+class UpdateTranscriptReq(BaseModel):
     path: str
-    old: str
-    new: str
+    segments: list[SegmentEdit]
+
+
+class RenameSpeakersReq(BaseModel):
+    path: str
+    names: dict[str, str]
+
+class PreferencesReq(BaseModel):
+    preferences: dict
+
+
+class ConnectionsReq(BaseModel):
+    connections: dict

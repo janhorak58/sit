@@ -36,24 +36,24 @@ def text(session):
 
 def test_overlapping_windows_preserve_sentence_prefix_without_repeating_overlap(monkeypatch, tmp_path):
     path = tmp_path / 'recording.wav'
-    audio(path, 8)
+    audio(path, 14)
     calls = []
 
     def transcribe(path, language, **kwargs):
         calls.append(language)
         if len(calls) == 1:
-            return Transcript([Segment(0, 7, 'We will ship the release on Friday.')], 8, 'local')
-        return Transcript([Segment(0, 4, 'on Friday. Documentation follows.')], 8, 'local')
+            return Transcript([Segment(0, 14, 'We will ship the release on Friday.')], 14, 'local')
+        return Transcript([Segment(0, 4, 'on Friday. Documentation follows.')], 14, 'local')
 
     monkeypatch.setattr(live_module, 'POLL_INTERVAL', 0.01)
     monkeypatch.setattr(live_module, 'transcribe', transcribe)
     session = live_module.LiveTranscriber()
     try:
         session.start(path, 'en')
-        eventually(lambda: session.snapshot()['processed_seconds'] >= 8)
+        eventually(lambda: session.snapshot()['processed_seconds'] >= 14)
         with path.open('ab') as output:
-            output.write(b'\0\0' * (16000 * 2))
-        eventually(lambda: session.snapshot()['processed_seconds'] >= 10)
+            output.write(b'\0\0' * (16000 * 10))
+        eventually(lambda: session.snapshot()['processed_seconds'] >= 24)
         draft = text(session)
         assert 'We will ship the release' in draft
         assert draft.count('on Friday.') == 1
@@ -65,7 +65,7 @@ def test_overlapping_windows_preserve_sentence_prefix_without_repeating_overlap(
 
 def test_cancelled_inference_cannot_publish_or_run_parallel_to_new_session(monkeypatch, tmp_path):
     path = tmp_path / 'recording.wav'
-    audio(path, 8)
+    audio(path, 14)
     entered = threading.Event()
     release = threading.Event()
     second = threading.Event()
@@ -74,9 +74,9 @@ def test_cancelled_inference_cannot_publish_or_run_parallel_to_new_session(monke
         if language == 'en':
             entered.set()
             assert release.wait(3)
-            return Transcript([Segment(0, 5, 'obsolete draft')], 8, 'local')
+            return Transcript([Segment(0, 5, 'obsolete draft')], 14, 'local')
         second.set()
-        return Transcript([Segment(0, 5, 'nová nahrávka')], 8, 'local')
+        return Transcript([Segment(0, 5, 'nová nahrávka')], 14, 'local')
 
     monkeypatch.setattr(live_module, 'POLL_INTERVAL', 0.01)
     monkeypatch.setattr(live_module, 'transcribe', transcribe)
@@ -85,8 +85,8 @@ def test_cancelled_inference_cannot_publish_or_run_parallel_to_new_session(monke
         session.start(path, 'en')
         assert entered.wait(3)
         with path.open('ab') as output:
-            output.write(b'\0\0' * (16000 * 6))
-        assert session.snapshot()['audio_seconds'] >= 14
+            output.write(b'\0\0' * (16000 * 10))
+        assert session.snapshot()['audio_seconds'] >= 24
         old_id = session.snapshot()['session_id']
         before = time.monotonic()
         session.cancel()
@@ -110,7 +110,7 @@ def test_live_failure_leaves_audio_available_for_saving(monkeypatch, tmp_path):
     from transcriber.schemas import StopReq
 
     path = tmp_path / 'current.wav'
-    audio(path, 8)
+    audio(path, 14)
     original = path.read_bytes()
 
     def fail(*args, **kwargs):
@@ -142,7 +142,7 @@ def test_slow_inference_does_not_skip_unprocessed_audio(monkeypatch, tmp_path):
         output.setnchannels(1)
         output.setsampwidth(2)
         output.setframerate(16000)
-        for second in range(8):
+        for second in range(14):
             output.writeframesraw(struct.pack('<h', second) * 16000)
     entered = threading.Event()
     release = threading.Event()
@@ -154,7 +154,7 @@ def test_slow_inference_does_not_skip_unprocessed_audio(monkeypatch, tmp_path):
         if len(starts) == 1:
             entered.set()
             assert release.wait(3)
-        return Transcript([], 8, 'local')
+        return Transcript([], 14, 'local')
 
     monkeypatch.setattr(live_module, 'POLL_INTERVAL', 0.01)
     monkeypatch.setattr(live_module, 'transcribe', transcribe)
@@ -163,26 +163,26 @@ def test_slow_inference_does_not_skip_unprocessed_audio(monkeypatch, tmp_path):
         session.start(path, 'en')
         assert entered.wait(3)
         with path.open('ab') as output:
-            for second in range(8, 22):
+            for second in range(14, 34):
                 output.write(struct.pack('<h', second) * 16000)
         release.set()
         eventually(lambda: len(starts) >= 3)
-        assert starts[:3] == [0, 2, 4]
+        assert starts[:3] == [0, 10, 20]
     finally:
         release.set()
         session.cancel()
 
 
-def test_draft_arrives_after_two_seconds_and_revises_with_context(monkeypatch, tmp_path):
+def test_draft_arrives_after_ten_seconds_and_revises_with_context(monkeypatch, tmp_path):
     path = tmp_path / 'recording.wav'
-    audio(path, 2)
+    audio(path, 10)
     durations = []
 
     def transcribe(path, language, **kwargs):
         with wave.open(str(path), 'rb') as source:
             duration = source.getnframes() / source.getframerate()
         durations.append(duration)
-        sentence = 'We can' if duration == 2 else 'We can ship tomorrow.'
+        sentence = 'We can' if duration == 10 else 'We can ship tomorrow.'
         return Transcript([Segment(0, duration, sentence)], duration, 'local')
 
     monkeypatch.setattr(live_module, 'POLL_INTERVAL', 0.01)
@@ -191,11 +191,11 @@ def test_draft_arrives_after_two_seconds_and_revises_with_context(monkeypatch, t
     try:
         session.start(path, 'en')
         eventually(lambda: text(session) == 'We can')
-        assert session.snapshot()['processed_seconds'] == 2
+        assert session.snapshot()['processed_seconds'] == 10
         with path.open('ab') as output:
-            output.write(b'\0\0' * (16000 * 2))
+            output.write(b'\0\0' * (16000 * 10))
         eventually(lambda: text(session) == 'We can ship tomorrow.')
-        assert durations == [2, 4]
+        assert durations == [10, 14]
     finally:
         session.cancel()
 

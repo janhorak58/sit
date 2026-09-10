@@ -21,7 +21,8 @@
       <a href="#dashboard"><span>⌂</span> Overview</a>
       <a class="new-link" href="#new"><span>＋</span> New recording</a>
       <a href="#library"><span>▤</span> Library</a>
-      <a href="#settings"><span>⚙</span> Settings</a>
+      <a href="#customizations"><span>☷</span> Customization</a>
+      <a href="#settings"><span>⚙</span> Connections</a>
     </nav>
     <section class="side-projects" aria-labelledby="projects-title">
       <p class="side-label" id="projects-title">Projects</p>
@@ -90,23 +91,26 @@
     <div class="view" data-view="workspace" hidden>
       <header class="workspace-header folder-header">
         <div><button id="workspace-library" class="path-link"><span>← Library /</span> <b id="workspace-path">—</b></button><div class="meeting-title-row"><h1 id="workspace-title">Meeting</h1><button id="workspace-rename" class="title-edit" type="button" aria-label="Rename meeting" title="Rename meeting">✎</button></div></div>
-        <div class="workspace-header-actions"><div class="mode-switch" aria-label="Meeting mode"><button id="workspace-view-mode" class="mode-option" type="button" disabled>View</button><span class="mode-option active" aria-current="page">Edit</span></div><a class="small quiet action-link" href="#new">＋ New recording</a></div>
+        <div class="workspace-header-actions"><button id="workspace-view-mode" class="small quiet" type="button" disabled>Read transcript</button><a class="small quiet action-link" href="#new">＋ New recording</a></div>
       </header>
       <div class="workspace-grid">
         <section class="wizard" aria-label="Meeting workflow">
-          <nav class="steps" role="tablist" aria-label="Progress">
-            <button id="step-tab-1" class="step active" role="tab" aria-controls="step-panel-1" aria-selected="true" data-step="1"><span>1</span><b>Recording</b></button>
+          <nav class="steps" role="tablist" aria-label="Processing steps">
+            <button id="step-tab-1" class="step active" role="tab" aria-controls="step-panel-1" aria-selected="true" data-step="1"><span>1</span><b>Capture</b></button>
             <button id="step-tab-2" class="step" role="tab" aria-controls="step-panel-2" aria-selected="false" data-step="2" disabled><span>2</span><b>Transcript</b></button>
-            <button id="step-tab-3" class="step" role="tab" aria-controls="step-panel-3" aria-selected="false" data-step="3" disabled><span>3</span><b>Summary</b></button>
+            <button id="step-tab-3" class="step" role="tab" aria-controls="step-panel-3" aria-selected="false" data-step="3" disabled><span>3</span><b>AI analysis</b></button>
           </nav>
           <div id="step-panel-1" class="stage active" role="tabpanel" aria-labelledby="step-tab-1" data-stage="1">
-            <div class="stage-copy"><span class="stage-number">01</span><div><h2>Add recording</h2><p>The result is saved directly into the open meeting folder.</p></div></div>
-            <label id="record-lang-field" class="record-lang-field"><span>Recording language</span><select id="record-lang"><option value="cs">Czech</option><option value="en">English</option><option value="">Detect automatically</option></select></label>
+            <div class="stage-copy"><div><p class="eyebrow">STEP 1 OF 3</p><h2>Capture or upload audio</h2><p>Choose the input once. The saved recording becomes the source for every later processing step.</p></div></div>
+            <div class="workflow-options">
+              <label id="record-lang-field"><span>Recording language</span><select id="record-lang"><option value="cs">Czech</option><option value="en">English</option><option value="">Detect automatically</option></select></label>
+              <label id="record-microphone-field"><span>Microphone</span><select id="record-microphone"><option value="">System default</option></select><small>System audio is captured alongside this microphone.</small></label>
+            </div>
             <label id="live-toggle-field" class="live-toggle-field"><input id="live-toggle" type="checkbox" checked><span class="live-toggle-track" aria-hidden="true"></span><span class="live-toggle-copy"><b>Live transcript while recording</b><small>Continuous text preview. Turning it off saves performance; the final transcript stays the same.</small></span></label>
-            <div id="source-locked" class="source-locked" hidden><span>WAV</span><div><b>Recording is saved</b><small>It stays in the workspace as a fixed input. You can rerun the transcript and summary anytime.</small></div><button id="to-transcript" class="small quiet" type="button">Go to transcript →</button></div>
+            <div id="source-locked" class="source-locked" hidden><span>WAV</span><div><b>Recording is saved</b><small>It stays as the fixed input. Transcript, speakers, and analysis can be regenerated without recording again.</small></div><button id="to-transcript" class="small quiet" type="button">Open transcript step →</button></div>
             <div id="source-choices" class="source-grid">
-              <button id="start" class="source-card" type="button"><span class="source-icon mic">●</span><b>Start recording</b><small>Microphone + system audio</small></button>
-              <label class="source-card upload-card" for="audiofile"><span class="source-icon upload">↑</span><b>Upload file</b><small>mp3, m4a, wav, video…</small><input id="audiofile" type="file" accept="audio/*,video/*"></label>
+              <button id="start" class="source-card" type="button"><span class="source-icon mic">●</span><b>Start recording</b><small>Selected microphone + system audio</small></button>
+              <label class="source-card upload-card" for="audiofile"><span class="source-icon upload">↑</span><b>Upload existing audio</b><small>mp3, m4a, wav, or video</small><input id="audiofile" type="file" accept="audio/*,video/*"></label>
             </div>
             <div id="record-session" class="record-session" hidden>
               <div class="record-toolbar">
@@ -116,7 +120,7 @@
               </div>
               <div id="record-transcript" class="record-transcript">
                 <div class="record-transcript-head"><b>Live transcript</b><span id="live-draft-status" class="live-draft-status" role="status" aria-live="polite"></span></div>
-                <p class="live-draft-notice">The text is just a preview and may change as it gets refined.</p>
+                <p class="live-draft-notice">Preview text may change during the final transcription pass.</p>
                 <div id="live-draft-segments" class="live-draft-segments" aria-label="Live transcript"></div>
                 <button id="jump-latest" class="jump-latest" type="button" hidden>↓ Jump to latest text</button>
               </div>
@@ -124,19 +128,40 @@
             <p class="status-line" id="source-status">Ready to receive a recording.</p>
           </div>
           <div id="step-panel-2" class="stage" role="tabpanel" aria-labelledby="step-tab-2" data-stage="2">
-            <div class="stage-copy"><span class="stage-number">02</span><div><h2>Prepare transcript</h2><p id="stored-path">The recording is safely saved.</p></div></div>
+            <div class="stage-copy"><div><p class="eyebrow">STEP 2 OF 3</p><h2>Generate transcript</h2><p id="stored-path">The recording is safely saved.</p></div></div>
             <div class="transcribe-options">
               <label><span>Language</span><select id="lang"><option value="cs">Czech</option><option value="en">English</option><option value="">Detect automatically</option></select></label>
-              <label><span>Number of speakers</span><input id="numspeakers" type="number" min="1" placeholder="Don't know"><small>1 = no speaker separation</small></label>
+              <label><span>Expected speakers</span><input id="numspeakers" type="number" min="1" placeholder="Detect automatically"><small>Use 1 to skip speaker separation.</small></label>
             </div>
             <div id="bar"><div id="fill"></div></div><p class="status-line" id="status">Ready.</p>
-            <div class="diarize-action"><div><b>Speaker recognition</b><small>Uses the finished transcript. The transcription engine won't run again.</small></div><button id="diarize" class="quiet" type="button" disabled>Recognize speakers again</button></div>
-            <div class="stage-actions"><button id="to-summary" class="quiet" type="button" disabled>Summary →</button><button id="transcribe" class="primary" type="button">Start transcription →</button></div>
+            <div class="diarize-action"><div><b>Speaker recognition</b><small>Re-label the finished transcript without running speech recognition again.</small></div><button id="diarize" class="quiet" type="button" disabled>Recognize speakers again</button></div>
+            <div id="speaker-names" class="speaker-names" hidden></div>
+            <div class="stage-actions"><button id="transcribe" class="primary" type="button">Generate transcript</button><button id="to-summary" class="primary" type="button" disabled>Continue to AI analysis →</button></div>
           </div>
           <div id="step-panel-3" class="stage" role="tabpanel" aria-labelledby="step-tab-3" data-stage="3">
-            <div class="stage-copy"><span class="stage-number">03</span><div><h2>Meeting brief</h2><p>Evidence-linked timeline, decisions, tasks, risks, speaker contributions, and follow-up draft.</p></div></div>
-            <div class="summary-offer"><div><b>Create an evidence-grounded brief</b><span>Each claim links back to the recording. Regenerating replaces AI output but keeps nothing inferred as fact.</span></div><button id="summarize" class="primary" type="button">Create / regenerate brief</button></div>
-            <p class="status-line" id="summary-status"></p><div class="stage-actions"><a class="quiet action-link" href="#library">Go to library</a><a id="new-recording" class="primary action-link" href="#new">＋ Another recording</a></div>
+            <div class="stage-copy"><div><p class="eyebrow">STEP 3 OF 3</p><h2>Generate AI analysis</h2><p>One click is enough. Chapters, decisions, action items, and a follow-up draft come from your saved defaults.</p></div></div>
+            <div class="summary-offer"><div><b id="summary-offer-title">Transcript is ready for analysis</b><span id="summary-offer-note">Analysis runs in the background; the transcript stays unchanged.</span></div><button id="summarize" class="primary" type="button">Generate AI analysis</button></div>
+            <p class="status-line" id="summary-status"></p>
+            <details id="analysis-advanced" class="advanced-options">
+              <summary>Adjust this analysis <span>detail, language, instructions, sections</span></summary>
+              <div class="advanced-body">
+                <div class="editor-options">
+                  <label><span>Detail</span><select id="workspace-brief-detail"><option value="short">Short</option><option value="standard">Standard</option><option value="detailed">Detailed</option></select></label>
+                  <label><span>Language</span><select id="workspace-brief-language"><option value="same">Transcript language</option><option value="cs">Czech</option><option value="en">English</option></select></label>
+                </div>
+                <label><span>Instructions for AI</span><textarea id="workspace-brief-prompt" class="analysis-prompt" placeholder="Optional instructions for this analysis…"></textarea></label>
+                <div id="workspace-brief-sections" class="analysis-sections">
+                  <label class="setting-toggle"><input type="checkbox" data-section="chapters"><span>Chapters</span></label>
+                  <label class="setting-toggle"><input type="checkbox" data-section="decisions"><span>Decisions</span></label>
+                  <label class="setting-toggle"><input type="checkbox" data-section="action_items"><span>Action items</span></label>
+                  <label class="setting-toggle"><input type="checkbox" data-section="open_questions"><span>Open questions</span></label>
+                  <label class="setting-toggle"><input type="checkbox" data-section="risks"><span>Risks</span></label>
+                  <label class="setting-toggle"><input type="checkbox" data-section="speaker_contributions"><span>Speaker contributions</span></label>
+                  <label class="setting-toggle"><input type="checkbox" data-section="follow_up"><span>Follow-up draft</span></label>
+                </div>
+              </div>
+            </details>
+            <div class="stage-actions finish-actions"><a id="new-recording" class="quiet action-link" href="#new">＋ Another recording</a><button id="open-meeting" class="primary" type="button">Open finished meeting →</button></div>
           </div>
         </section>
       </div>
@@ -157,14 +182,133 @@
     <div class="view" data-view="meeting" hidden>
       <header class="workspace-header">
         <div><p class="eyebrow">MEETING</p><div class="meeting-title-row"><h1 id="meeting-title">Transcript</h1><button id="meeting-rename" class="title-edit" type="button" aria-label="Rename meeting" title="Rename meeting">✎</button></div></div>
-        <div class="workspace-header-actions"><button id="meeting-back" class="small quiet" type="button">← Library</button><div class="mode-switch" aria-label="Meeting mode"><span class="mode-option active" aria-current="page">View</span><button id="meeting-edit-mode" class="mode-option" type="button">Edit</button></div></div>
+        <div class="workspace-header-actions"><button id="meeting-back" class="small quiet" type="button">← Library</button><button id="meeting-edit" class="small primary" type="button">Edit meeting</button></div>
       </header>
       <div class="meeting-player"><audio id="meeting-audio" controls></audio><p id="meeting-meta" class="meeting-meta"></p></div>
-      <div class="meeting-body"><section id="meeting-transcript" class="meeting-transcript card"></section><aside id="meeting-summary" class="meeting-summary card"></aside></div>
+      <div id="meeting-body" class="meeting-body"></div>
+      <dialog id="meeting-artifact-dialog" class="transcript-dialog"><div class="transcript-dialog-head"><div><p class="eyebrow" id="meeting-artifact-kicker">MEETING OUTPUT</p><h2 id="meeting-artifact-title">Output</h2></div><button id="meeting-artifact-close" class="icon" type="button" aria-label="Close output">×</button></div><section id="meeting-artifact-body" class="meeting-transcript"></section></dialog>
+    </div>
+
+    <div class="view" data-view="customizations" hidden>
+      <header class="workspace-header">
+        <div><p class="eyebrow">CUSTOMIZATION</p><h1>Make SIT work your way</h1></div>
+        <p>Set defaults for new recordings, transcripts, briefs, privacy, and exports.</p>
+      </header>
+      <form id="customizations-form" class="customization-grid">
+        <section class="card customization-card profile-card customization-lead">
+          <div><p class="eyebrow">STARTING POINT</p><h2>Choose a working profile</h2><p>Profiles set sensible defaults. Every choice below remains editable.</p></div>
+          <label><span>Typical work</span><select id="custom-profile" data-path="profile"><option value="meeting">Meeting</option><option value="interview">Interview</option><option value="lecture">Lecture</option><option value="notes">Personal notes</option></select></label>
+        </section>
+        <section class="card customization-card customization-wide">
+          <header class="custom-card-head"><div><p class="eyebrow">RECORDING</p><h2>Capture</h2></div><p>Defaults used when a new recording starts.</p></header>
+          <div class="custom-fields two-column">
+            <label><span>Default project</span><input data-path="recording.default_project" placeholder="Ask every time"></label>
+            <label><span>Microphone</span><select id="custom-microphone" data-path="recording.microphone"><option value="">System default</option></select><small>System audio is always captured alongside it.</small></label>
+            <label><span>Language</span><select id="custom-language" data-path="recording.language"><option value="cs">Czech</option><option value="en">English</option><option value="">Detect automatically</option></select></label>
+            <label><span>Live preview cadence</span><select data-path="recording.live_chunk_seconds"><option value="10">Balanced — 10 seconds</option><option value="20">Quality — 20 seconds</option><option value="30">Focused — 30 seconds</option></select></label>
+            <label><span>Expected speakers</span><select id="custom-speakers" data-path="recording.speaker_count"><option value="">Detect automatically</option><option value="1">One — no separation</option><option value="2">Two</option><option value="3">Three</option><option value="4">Four</option></select></label>
+          </div>
+          <div class="custom-toggles"><label class="setting-toggle"><input type="checkbox" data-path="recording.live_enabled"><span>Live transcript while recording</span></label><label class="setting-toggle"><input type="checkbox" data-path="recording.auto_diarize"><span>Recognize speakers after transcription</span></label></div>
+        </section>
+        <section class="card customization-card">
+          <header class="custom-card-head"><div><p class="eyebrow">TRANSCRIPT</p><h2>Reading</h2></div></header>
+          <div class="custom-fields"><label><span>Open meeting on</span><select data-path="transcript.default_view"><option value="both">Transcript + brief</option><option value="transcript">Transcript</option><option value="brief">Brief</option></select></label><label><span>Paragraph grouping</span><select data-path="transcript.paragraph_size"><option value="short">Short turns</option><option value="normal">Normal</option><option value="long">Long blocks</option></select></label></div>
+          <div class="custom-toggles"><label class="setting-toggle"><input type="checkbox" data-path="transcript.show_timestamps"><span>Show timestamps</span></label><label class="setting-toggle"><input type="checkbox" data-path="transcript.show_speakers"><span>Show speaker labels</span></label></div>
+        </section>
+        <section class="card customization-card">
+          <header class="custom-card-head"><div><p class="eyebrow">AI ANALYSIS</p><h2>Content</h2></div><p>Used as the starting point; each meeting can override it.</p></header>
+          <div class="custom-fields"><label><span>Detail</span><select id="custom-brief-detail" data-path="brief.detail"><option value="short">Short</option><option value="standard">Standard</option><option value="detailed">Detailed</option></select></label><label><span>Analysis language</span><select data-path="brief.language"><option value="same">Same as transcript</option><option value="cs">Czech</option><option value="en">English</option></select></label></div>
+          <div class="custom-toggles"><label class="setting-toggle"><input id="custom-compare" type="checkbox" data-path="brief.compare_previous"><span>Compare with recent meetings</span></label></div>
+          <div class="section-switches"><span>Include sections</span><div class="section-switch-grid"><label class="setting-toggle"><input type="checkbox" data-path="brief.sections.chapters"><span>Timeline</span></label><label class="setting-toggle"><input type="checkbox" data-path="brief.sections.decisions"><span>Decisions</span></label><label class="setting-toggle"><input type="checkbox" data-path="brief.sections.action_items"><span>Action items</span></label><label class="setting-toggle"><input type="checkbox" data-path="brief.sections.open_questions"><span>Questions</span></label><label class="setting-toggle"><input type="checkbox" data-path="brief.sections.risks"><span>Risks</span></label><label class="setting-toggle"><input type="checkbox" data-path="brief.sections.speaker_contributions"><span>Speaker contributions</span></label><label class="setting-toggle"><input type="checkbox" data-path="brief.sections.follow_up"><span>Follow-up draft</span></label></div></div>
+        </section>
+        <section class="card customization-card customization-wide">
+          <header class="custom-card-head"><div><p class="eyebrow">PRIVACY & EXPORT</p><h2>Data handling</h2></div><p>Transcription has a local fallback. AI analysis currently requires gpt-oss and preserves the previous analysis if unavailable.</p></header>
+          <div class="custom-fields two-column"><label><span>Processing preference</span><select data-path="privacy.processing"><option value="auto">Automatic — remote when available</option><option value="local">Prefer local processing</option><option value="remote">Prefer remote processing</option></select></label><label><span>Default export</span><select data-path="export.format"><option value="markdown">Markdown brief</option><option value="transcript">Plain transcript</option><option value="json">Structured JSON</option></select></label></div>
+          <div class="custom-toggles"><label class="setting-toggle"><input type="checkbox" data-path="privacy.clear_live_drafts"><span>Clear live draft after saving</span></label><label class="setting-toggle"><input type="checkbox" data-path="export.include_audio_links"><span>Include audio timestamp links in exports</span></label></div>
+        </section>
+        <footer class="customization-actions"><p id="customization-status" class="status-line">Defaults apply to new recordings and newly generated briefs.</p><button id="customizations-save" class="primary" type="submit">Save customizations</button></footer>
+      </form>
     </div>
 
     <div class="view" data-view="settings" hidden>
-      <header class="workspace-header"><div><p class="eyebrow">SETTINGS</p><h1>Transcription engine</h1></div><div class="row"><button id="settings-refresh" class="small" type="button">↻ Test again</button></div></header>
+      <header class="workspace-header"><div><p class="eyebrow">CONNECTIONS</p><h1>Remote processing</h1></div><div class="row"><button id="settings-refresh" class="small" type="button">↻ Test connections</button></div></header>
+      <form id="connections-form" class="connections-form">
+        <section class="card connection-card connection-ssh">
+          <header class="custom-card-head"><div><p class="eyebrow">STEP 1</p><h2>SSH access</h2></div><p>Fill in the machine and your username; everything else is prefilled. SIT opens the port forwards itself and closes them when it quits. Authentication uses your SSH key or agent — passwords are never stored.</p></header>
+          <label class="setting-toggle connection-enable"><input id="ssh-enabled" type="checkbox" data-connection-path="ssh.enabled"><span>Reach the AI services through SSH tunnels</span></label>
+          <div class="custom-fields two-column">
+            <label><span>SSH host</span><input data-connection-path="ssh.host" placeholder="host.example.com"><small>The machine running the services. A service can override it below.</small></label>
+            <label><span>SSH user</span><input autocomplete="username" data-connection-path="ssh.user" placeholder="Remote username"><small>Leave empty to use your SSH config or local username.</small></label>
+            <label><span>SSH port</span><input type="number" min="1" max="65535" data-connection-path="ssh.port" placeholder="22"></label>
+            <label><span>SSH key</span><input data-connection-path="ssh.ssh_key" placeholder="~/.ssh/id_ed25519"><small>Leave empty to use ssh-agent or your SSH config.</small></label>
+          </div>
+          <div class="tunnel-map" aria-label="SSH tunnel route"><span>This computer</span><i>SSH</i><span>Remote machine</span><i>local ports</i><span>AI services</span></div>
+          <div class="connection-test"><button id="ssh-test" class="small" type="button">Test SSH connection</button><p class="connection-result" id="result-ssh"></p></div>
+        </section>
+        <section class="connection-services">
+          <section class="card connection-card">
+            <header class="connection-card-head"><div><p class="eyebrow">SPEECH TO TEXT</p><h2>Transcription</h2></div></header>
+            <div class="custom-fields two-column">
+              <label><span>Local port</span><input type="number" min="0" max="65535" value="8208" data-connection-path="transcription.local_port" placeholder="Off"><small>Port on this computer. Empty = service unused.</small></label>
+              <label><span>Remote port</span><input type="number" min="0" max="65535" value="8208" data-connection-path="transcription.remote_port" placeholder="Same as local"><small>Port the service listens on there.</small></label>
+            </div>
+            <label><span>Model</span><input value="nemo-canary-1b-v2" data-connection-path="transcription.model" placeholder="nemo-canary-1b-v2"></label>
+            <p class="connection-endpoint" id="endpoint-transcription">http://127.0.0.1:8208/v1/audio/transcriptions</p>
+            <details class="advanced-options"><summary>Advanced <span>remote address, API path, other machine</span></summary>
+              <div class="custom-fields">
+                <label><span>Remote address</span><input value="127.0.0.1" data-connection-path="transcription.remote_host" placeholder="127.0.0.1"><small>Address the service binds on the remote machine.</small></label>
+                <label><span>API path</span><input value="/v1/audio/transcriptions" data-connection-path="transcription.path" placeholder="/v1/audio/transcriptions"></label>
+                <label><span>Runs on another machine</span><input data-connection-path="transcription.ssh_host" placeholder="Uses the SSH host above"></label>
+                <label><span>Direct address (no tunnel)</span><input type="url" data-connection-path="transcription.host" placeholder="Uses the base address"></label>
+              </div>
+            </details>
+            <div class="connection-test"><button class="small primary" type="button" data-connection-test="transcription">Set up and test</button><p class="connection-result" id="result-transcription"></p></div>
+          </section>
+          <section class="card connection-card">
+            <header class="connection-card-head"><div><p class="eyebrow">SPEAKERS</p><h2>Pyannote</h2></div></header>
+            <div class="custom-fields two-column">
+              <label><span>Local port</span><input type="number" min="0" max="65535" value="8299" data-connection-path="diarization.local_port" placeholder="Off"><small>Port on this computer. Empty = service unused.</small></label>
+              <label><span>Remote port</span><input type="number" min="0" max="65535" value="8299" data-connection-path="diarization.remote_port" placeholder="Same as local"><small>Port the service listens on there.</small></label>
+            </div>
+            <label><span>HuggingFace token</span><input type="password" autocomplete="off" spellcheck="false" data-connection-secret="diarization.hf_token" placeholder="hf_…"><small id="hf-token-state">Only the local fallback needs it, for gated pyannote models.</small></label>
+            <label class="setting-toggle"><input id="forget-hf-token" type="checkbox"><span>Forget the stored token</span></label>
+            <p class="connection-endpoint" id="endpoint-diarization">http://127.0.0.1:8299/v1/audio/diarizations</p>
+            <details class="advanced-options"><summary>Advanced <span>remote address, API path, other machine</span></summary>
+              <div class="custom-fields">
+                <label><span>Remote address</span><input value="127.0.0.1" data-connection-path="diarization.remote_host" placeholder="127.0.0.1"><small>Address the service binds on the remote machine.</small></label>
+                <label><span>API path</span><input value="/v1/audio/diarizations" data-connection-path="diarization.path" placeholder="/v1/audio/diarizations"></label>
+                <label><span>Local fallback model</span><input value="pyannote/speaker-diarization-3.1" data-connection-path="diarization.local_model" placeholder="pyannote/speaker-diarization-3.1"></label>
+                <label><span>Runs on another machine</span><input data-connection-path="diarization.ssh_host" placeholder="Uses the SSH host above"></label>
+                <label><span>Direct address (no tunnel)</span><input type="url" data-connection-path="diarization.host" placeholder="Uses the base address"></label>
+              </div>
+            </details>
+            <div class="connection-test"><button class="small primary" type="button" data-connection-test="diarization">Set up and test</button><p class="connection-result" id="result-diarization"></p></div>
+          </section>
+          <section class="card connection-card">
+            <header class="connection-card-head"><div><p class="eyebrow">AI ANALYSIS</p><h2>LLM</h2></div></header>
+            <div class="custom-fields two-column">
+              <label><span>Local port</span><input type="number" min="0" max="65535" value="8100" data-connection-path="llm.local_port" placeholder="Off"><small>Port on this computer. Empty = service unused.</small></label>
+              <label><span>Remote port</span><input type="number" min="0" max="65535" value="8100" data-connection-path="llm.remote_port" placeholder="Same as local"><small>Port the service listens on there.</small></label>
+            </div>
+            <label><span>Model</span><input value="gpt-oss-120b" data-connection-path="llm.model" placeholder="gpt-oss-120b"></label>
+            <p class="connection-endpoint" id="endpoint-llm">http://127.0.0.1:8100</p>
+            <details class="advanced-options"><summary>Advanced <span>remote address, API path, other machine</span></summary>
+              <div class="custom-fields">
+                <label><span>Remote address</span><input value="127.0.0.1" data-connection-path="llm.remote_host" placeholder="127.0.0.1"><small>Address the service binds on the remote machine.</small></label>
+                <label><span>API path</span><input data-connection-path="llm.path" placeholder="/v1"></label>
+                <label><span>Runs on another machine</span><input data-connection-path="llm.ssh_host" placeholder="Uses the SSH host above"></label>
+                <label><span>Direct address (no tunnel)</span><input type="url" data-connection-path="llm.host" placeholder="Uses the base address"></label>
+              </div>
+            </details>
+            <div class="connection-test"><button class="small primary" type="button" data-connection-test="llm">Set up and test</button><p class="connection-result" id="result-llm"></p></div>
+          </section>
+        </section>
+        <details class="advanced-options connection-global-advanced"><summary>Without tunnels <span>shared base address</span></summary>
+          <label class="base-url-field"><span>Base address</span><input type="url" data-connection-path="base_url" placeholder="http://127.0.0.1"><small>Used only by services without a tunnel. No port here — ports belong to the services.</small></label>
+        </details>
+        <footer class="connection-actions"><p id="connections-status" class="status-line">Set up and test opens the tunnels and checks every service.</p><button id="connections-save" class="primary" type="submit">Set up and test</button></footer>
+      </form>
+      <div class="connections-results-head"><p class="eyebrow">LIVE STATUS</p><h2>Service diagnostics</h2></div>
       <div id="settings-body" class="settings-body"></div>
     </div>
   </main>

@@ -1,0 +1,15 @@
+# Optional: local speaker recognition (pyannote) fallback.
+# This is the ONLY part of the app that needs torch. Install torch from the CPU
+# wheel index FIRST, otherwise the resolver pulls the CUDA build with ~4 GB of
+# nvidia-*/triton wheels the CPU pipeline never uses:
+#
+#   uv pip install --python .venv/bin/python torch torchaudio \
+#     --index-url https://download.pytorch.org/whl/cpu
+#   uv pip install --python .venv/bin/python -r requirements-diarization.txt
+#
+# pyannote 4 is required: the 3.x branch calls torchaudio.AudioMetaData, which
+# current torchaudio no longer provides.
+# Without this file the app runs remote diarization only, and local speaker
+# recognition reports that the extra is missing.
+-r requirements.txt
+pyannote.audio>=4.0
