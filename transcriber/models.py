@@ -8,8 +8,6 @@ import os
 import threading
 
 from .config import (
-    DIARIZE_MODEL,
-    HF_TOKEN,
     LOCAL_ASR_DEVICE,
     LOCAL_ASR_MODEL,
     LOCAL_ASR_PATH,
@@ -17,6 +15,7 @@ from .config import (
     LOCAL_ASR_VAD_MODEL,
     LOCAL_ASR_WINDOW_SECONDS,
 )
+from .connections import get_connection
 
 _cache = {"asr": None, "diarize": None}
 # Guards lazy construction only; the batch pipeline and the live-draft worker
@@ -60,16 +59,29 @@ def get_local_asr():
 
 
 def get_diarize_pipeline():
-    if not HF_TOKEN:
+    diarization = get_connection("diarization")
+    model, token = diarization["local_model"], diarization["hf_token"]
+    if not token:
         raise RuntimeError(
-            "HF_TOKEN is not set; model pyannote/speaker-diarization-3.1 "
-            "requires approved HuggingFace access."
+            f"No HuggingFace token is set; model {model} requires approved "
+            "HuggingFace access. Add the token under Connections."
         )
     if _cache["diarize"] is None:
-        import torch
+        try:
+            import torch
+        except ImportError as exc:
+            raise RuntimeError(
+                "Local speaker recognition is not installed. The default "
+                "install ships without torch/pyannote; either configure a "
+                "remote diarizer under Connections or install the optional "
+                "extra (see 'Setup B' in README.md): uv pip install --python "
+                ".venv/bin/python torch torchaudio --index-url "
+                "https://download.pytorch.org/whl/cpu && uv pip install "
+                "--python .venv/bin/python -r requirements-diarization.txt"
+            ) from exc
 
         torch.set_num_threads(os.cpu_count())
         from pyannote.audio import Pipeline
 
-        _cache["diarize"] = Pipeline.from_pretrained(DIARIZE_MODEL, token=HF_TOKEN)
+        _cache["diarize"] = Pipeline.from_pretrained(model, token=token)
     return _cache["diarize"]

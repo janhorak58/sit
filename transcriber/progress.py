@@ -25,7 +25,7 @@ class Progress:
     def begin(self, **fields):
         """Start the only supported job, returning False while one is active."""
         with self._lock:
-            if self._state["stage"] in {"transcribing", "diarizing", "merging"}:
+            if self._state["stage"] in {"transcribing", "diarizing", "merging", "analyzing"}:
                 return False
             self._state = {**IDLE, "stage": "transcribing", **fields}
             return True

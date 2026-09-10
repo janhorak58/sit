@@ -9,13 +9,8 @@ import subprocess
 import threading
 
 from .asr import Segment, transcribe
-from .config import (
-    DIARIZE_MODEL,
-    LOCAL_ASR_DEVICE,
-    LOCAL_ASR_MODEL,
-    SPARK_DIARIZER_URL,
-    SPARK_WHISPER_MODEL,
-)
+from .config import LOCAL_ASR_DEVICE, LOCAL_ASR_MODEL
+from .connections import get_connection
 from .library import meeting_json_path_for
 from .models import get_diarize_pipeline
 from .paths import rel_to_data
@@ -86,9 +81,10 @@ def load_waveform(path):
 
 def remote_diarizer_status():
     """Probe the configured Spark diarizer without loading the local model."""
-    if not SPARK_DIARIZER_URL:
+    endpoint = get_connection("diarization")["endpoint"]
+    if not endpoint:
         return {"available": False, "backend": "local", "last_error": None}
-    health_url = SPARK_DIARIZER_URL.removesuffix("/v1/audio/diarizations").rstrip("/") + "/health"
+    health_url = endpoint.removesuffix("/v1/audio/diarizations").rstrip("/") + "/health"
     try:
         response = httpx.get(health_url, timeout=2.0)
         response.raise_for_status()
@@ -112,7 +108,7 @@ def _remote_speaker_turns(wav_path, num_speakers):
     data = {"num_speakers": str(num_speakers)} if num_speakers else {}
     with wav_path.open("rb") as audio:
         response = httpx.post(
-            SPARK_DIARIZER_URL,
+            get_connection("diarization")["endpoint"],
             data=data,
             files={"file": (wav_path.name, audio, "audio/wav")},
             timeout=3600.0,
@@ -124,13 +120,15 @@ def _remote_speaker_turns(wav_path, num_speakers):
     turns = body.get("segments")
     if not turns:
         raise ValueError("Spark diarizer returned no segments.")
-    return turns, body.get("model") or DIARIZE_MODEL
+    return turns, body.get("model") or get_connection("diarization")["local_model"]
 
 
 def _local_speaker_turns(wav_path, num_speakers):
     diar_kwargs = {"num_speakers": num_speakers} if num_speakers else {}
-    audio = load_waveform(wav_path)
-    annotation = get_diarize_pipeline()(audio, **diar_kwargs).speaker_diarization
+    # Resolve the model first: it raises the actionable "extra not installed"
+    # error, while load_waveform would only fail on a bare `import torch`.
+    pipeline = get_diarize_pipeline()
+    annotation = pipeline(load_waveform(wav_path), **diar_kwargs).speaker_diarization
     return [
         {"start": float(turn.start), "end": float(turn.end), "speaker": speaker}
         for turn, _, speaker in annotation.itertracks(yield_label=True)
@@ -140,8 +138,9 @@ def _local_speaker_turns(wav_path, num_speakers):
 def label_speakers(wav_path, segments, num_speakers):
     """Attach labels using Spark first, with the local model as fallback."""
     global _last_remote_diarization_error
-    turns, backend, model = None, "local", DIARIZE_MODEL
-    if SPARK_DIARIZER_URL:
+    diarization = get_connection("diarization")
+    turns, backend, model = None, "local", diarization["local_model"]
+    if diarization["endpoint"]:
         progress.update(stage="diarizing", percent=75, message="Recognizing speakers on Spark...")
         try:
             turns, model = _remote_speaker_turns(wav_path, num_speakers)
@@ -272,6 +271,7 @@ def run_pipeline(wav_path, txt_path, language, num_speakers):
         txt_path.parent.mkdir(parents=True, exist_ok=True)
         txt_path.write_text(text)
         diarized = any(seg.speaker for seg in segments)
+        remote_asr_model = get_connection("transcription")["model"]
         meeting_json_path_for(txt_path).write_text(json.dumps({
             "version": 2,
             "language": language,
@@ -283,7 +283,7 @@ def run_pipeline(wav_path, txt_path, language, num_speakers):
             "asr": {
                 "backend": result.backend,
                 "where": "Working Spark" if result.backend == "spark" else "Locally",
-                "model": SPARK_WHISPER_MODEL if result.backend == "spark" else LOCAL_ASR_MODEL,
+                "model": remote_asr_model if result.backend == "spark" else LOCAL_ASR_MODEL,
                 "device": None if result.backend == "spark" else LOCAL_ASR_DEVICE,
             },
             "diarization": {
@@ -298,6 +298,7 @@ def run_pipeline(wav_path, txt_path, language, num_speakers):
                 "note": warning,
             },
             "segments": [dataclasses.asdict(seg) for seg in segments],
+            "analysis_stale": False,
         }, ensure_ascii=False, indent=2))
 
         progress.finish(

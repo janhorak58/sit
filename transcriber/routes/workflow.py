@@ -1,15 +1,24 @@
 import json
+import threading
 from pathlib import Path
 
 from fastapi import APIRouter
+from ..connections import (
+    endpoints,
+    get_connection,
+    normalize_connections,
+    public_connections,
+    save_connections,
+    test_ssh,
+    tunnels,
+)
 from ..errors import AppError
+from ..preferences import get_preferences, merge_preferences, save_preferences
 
 from ..asr import diagnose, remote_status
 from ..config import (
     AUDIO_SUBDIR,
     DATA_DIR,
-    DIARIZE_MODEL,
-    HF_TOKEN,
     INTERNAL_TOP_DIRS,
     LOCAL_ASR_DEVICE,
     LOCAL_ASR_MODEL,
@@ -18,10 +27,42 @@ from ..config import (
 from ..library import meeting_json_path_for, read_text
 from ..paths import rel_to_data, resolve_in_data, safe_target_dir, sanitize_component
 from ..pipeline import remote_diarizer_status
-from ..schemas import SuggestReq, SummaryReq
-from ..summary import render_markdown, summarize
+from ..schemas import ConnectionsReq, PreferencesReq, SuggestReq, SummaryReq
+from ..summary import remote_status as analysis_remote_status, render_markdown, summarize
+from ..progress import progress
 
 router = APIRouter()
+
+
+@router.get("/preferences")
+def preferences():
+    return get_preferences()
+
+
+@router.put("/preferences")
+def update_preferences(req: PreferencesReq):
+    return save_preferences(req.preferences)
+
+
+@router.get("/connections")
+def connections():
+    return {
+        "connections": public_connections(),
+        "endpoints": endpoints(),
+        "tunnels": tunnels.status(),
+    }
+
+
+@router.put("/connections")
+def update_connections(req: ConnectionsReq):
+    save_connections(req.connections)
+    return {"connections": public_connections(), "endpoints": endpoints(), "tunnels": tunnels.restart()}
+
+
+@router.post("/connections/ssh-test")
+def connections_ssh_test(req: ConnectionsReq):
+    """Check the SSH login for the values currently in the form."""
+    return test_ssh(normalize_connections(req.connections))
 
 
 @router.get("/asr/status")
@@ -41,9 +82,11 @@ def asr_diagnostics():
         },
         "diarization": {
             "remote": remote_diarizer_status(),
-            "local_model": DIARIZE_MODEL,
-            "hf_token": bool(HF_TOKEN),
+            "local_model": get_connection("diarization")["local_model"],
+            "hf_token": bool(get_connection("diarization")["hf_token"]),
         },
+        "analysis": analysis_remote_status(),
+        "ssh": tunnels.status(),
     }
 
 
@@ -87,24 +130,66 @@ def _previous_context(transcript):
     return "\n".join(items)
 
 
+def _brief_instructions(preferences):
+    brief = preferences["brief"]
+    sections = ", ".join(name.replace("_", " ") for name, enabled in brief["sections"].items() if enabled)
+    language = "the transcript's language" if brief["language"] == "same" else brief["language"]
+    prompt = str(brief.get("user_prompt") or "").strip()
+    return f"Detail: {brief['detail']}. Write in {language}. Include only: {sections}." + (f"\nUser instructions: {prompt}" if prompt else "")
+
+
+def _filter_brief(data, preferences):
+    for section, enabled in preferences["brief"]["sections"].items():
+        if not enabled:
+            data[section] = "" if section == "follow_up" else []
+    if not preferences["brief"]["compare_previous"]:
+        data["changes_since_last"] = []
+    return data
+
+
+def _create_summary(transcript, path, project, preferences):
+    try:
+        text = read_text(path)
+        segments = None
+        meeting_json = meeting_json_path_for(transcript)
+        if meeting_json.is_file():
+            try:
+                segments = json.loads(meeting_json.read_text()).get("segments")
+            except (json.JSONDecodeError, OSError):
+                pass
+        previous = _previous_context(transcript) if preferences["brief"]["compare_previous"] else ""
+        data = _filter_brief(
+            summarize(text, project, segments, previous, _brief_instructions(preferences)),
+            preferences,
+        )
+        summary_path = transcript.with_name(f"{transcript.stem}.summary.md")
+        summary_path.write_text(render_markdown(data))
+        transcript.with_name(f"{transcript.stem}.summary.json").write_text(
+            json.dumps(data, ensure_ascii=False, indent=2)
+        )
+        if meeting_json.is_file():
+            meeting = json.loads(meeting_json.read_text())
+            meeting["analysis_stale"] = False
+            meeting_json.write_text(json.dumps(meeting, ensure_ascii=False, indent=2))
+        progress.finish(stage="done", percent=100, message="AI analysis is ready.", saved_path=path)
+    except Exception as exc:
+        progress.finish(stage="error", message=str(exc), error=str(exc), saved_path=path)
+
+
 @router.post("/summaries")
 def create_summary(req: SummaryReq):
     transcript = resolve_in_data(req.path)
     if transcript is None or not transcript.is_file() or transcript.suffix != ".txt":
         raise AppError("Transcript not found.")
-    text = read_text(req.path)
-    segments = None
-    meeting_json = meeting_json_path_for(transcript)
-    if meeting_json.is_file():
-        try:
-            segments = json.loads(meeting_json.read_text()).get("segments")
-        except (json.JSONDecodeError, OSError):
-            segments = None
-    data = summarize(text, req.project, segments, _previous_context(transcript))
-    markdown = render_markdown(data)
-    summary_path = transcript.with_name(f"{transcript.stem}.summary.md")
-    summary_path.write_text(markdown)
-    transcript.with_name(f"{transcript.stem}.summary.json").write_text(
-        json.dumps(data, ensure_ascii=False, indent=2)
-    )
-    return {"ok": True, "summary": markdown, "path": rel_to_data(summary_path)}
+    preferences = merge_preferences(req.preferences) if req.preferences else get_preferences()
+    if not progress.begin(
+        stage="analyzing", percent=5, message="Preparing AI analysis...",
+        operation="summarize", source_path=req.path, saved_path=req.path,
+    ):
+        raise AppError("Another processing step is already running.")
+    threading.Thread(
+        target=_create_summary,
+        args=(transcript, req.path, req.project, preferences),
+        daemon=True,
+    ).start()
+    return {"ok": True}

@@ -19,8 +19,9 @@ async function get(url) {
   return body(await fetch(url));
 }
 
-export const startRecording = (language, live) => post('/start', {language, live});
+export const startRecording = (language, live, microphone = '') => post('/start', {language, live, microphone});
 export const recordingStatus = () => get('/recording/status');
+export const recordingDevices = () => get('/recording/devices');
 export const stopRecording = (folder, filename) => post('/stop', {folder, filename});
 export const cancelRecording = () => post('/recording/cancel');
 export const uploadAudio = async (file, folder, filename) => {
@@ -35,13 +36,30 @@ export const asrStatus = () => get('/asr/status');
 export const diagnostics = () => get('/asr/diagnostics');
 export const projects = () => get('/projects');
 export const suggestFolder = project => post('/projects/suggest-folder', {project});
-export const summarize = (path, project) => post('/summaries', {path, project});
+export const summarize = (path, project, preferences) => post('/summaries', {path, project, preferences});
+export const preferences = () => get('/preferences');
+export const savePreferences = async preferences => body(await fetch('/preferences', {
+  method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({preferences}),
+}));
+export const connections = () => get('/connections');
+export const saveConnections = async connections => body(await fetch('/connections', {
+  method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({connections}),
+}));
+export const testSsh = connections => post('/connections/ssh-test', {connections});
 
 export const browse = folder => get('/library/browse?path=' + encodeURIComponent(folder));
 export const readMeeting = path => get('/library/meeting?path=' + encodeURIComponent(path));
 export const readSummaryJson = path => get('/library/summary-json?path=' + encodeURIComponent(path));
-export const renameSpeaker = (path, oldName, newName) =>
-  post('/library/rename-speaker', {path, old: oldName, new: newName});
+export const updateTranscript = async (path, segments) => body(await fetch('/library/transcript', {
+  method: 'PUT',
+  headers: {'Content-Type': 'application/json'},
+  body: JSON.stringify({path, segments}),
+}));
+export const renameSpeakers = async (path, names) => body(await fetch('/library/speakers', {
+  method: 'PUT',
+  headers: {'Content-Type': 'application/json'},
+  body: JSON.stringify({path, names}),
+}));
 export const mkdir = folder => post('/library/mkdir', {folder});
 export const renameFolder = (path, name) => post('/library/folder/rename', {path, name});
 export const deleteFolder = path => post('/library/folder/delete', {path});

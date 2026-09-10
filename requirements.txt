@@ -1,6 +1,9 @@
+# Default (remote) install: no torch, no pyannote. onnx-asr pulls onnxruntime
+# and numpy, so local CPU ASR still works out of the box.
+# Local speaker recognition is opt-in: requirements-diarization.txt.
 fastapi
 uvicorn[standard]
-onnx-asr
-pyannote.audio
+# [cpu] pulls onnxruntime, [hub] the HuggingFace model download.
+onnx-asr[cpu,hub]
 httpx
 python-dotenv

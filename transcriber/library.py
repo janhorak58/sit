@@ -171,15 +171,17 @@ def _render_segments_text(segments):
     lines, last_speaker = [], None
     for seg in segments:
         speaker = seg.get("speaker")
-        if speaker != last_speaker:
+        if speaker and speaker != last_speaker:
             lines.append(f"\n[{speaker}]")
-            last_speaker = speaker
+        last_speaker = speaker
         lines.append((seg.get("text") or "").strip())
     return "\n".join(lines).strip()
 
 
-def rename_speaker(path, old_name, new_name):
-    """Rename one speaker without collapsing two distinct speakers together."""
+
+
+def update_transcript(path, edits):
+    """Persist corrections and mark the derived AI analysis as outdated."""
     txt_path = resolve_in_data(path)
     if txt_path is None or not txt_path.is_file():
         raise AppError("invalid path")
@@ -188,24 +190,48 @@ def rename_speaker(path, old_name, new_name):
         raise AppError("Segments are not available.")
     data = json.loads(meeting_path.read_text())
     segments = data.get("segments") or []
-    new_name = new_name.strip()
-    if not new_name:
-        raise AppError("Speaker name must not be empty.")
-    if new_name != old_name and any(
-        seg.get("speaker") == new_name for seg in segments
-    ):
-        raise AppError(f'Speaker "{new_name}" already exists in this meeting.')
-    changed = False
-    for seg in segments:
-        if seg.get("speaker") == old_name:
-            seg["speaker"] = new_name
-            changed = True
-    if not changed:
-        raise AppError("Speaker not found.")
+    if len(edits) != len(segments):
+        raise AppError("Transcript changed elsewhere. Reload before saving.")
+    for segment, edit in zip(segments, edits):
+        text = edit["text"].strip()
+        if not text:
+            raise AppError("Every transcript cue needs text.")
+        segment["text"] = text
+        speaker = (edit.get("speaker") or "").strip()
+        segment["speaker"] = speaker or None
     data["segments"] = segments
+    data["analysis_stale"] = True
     meeting_path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
     txt_path.write_text(_render_segments_text(segments))
     return {"segments": segments}
+
+
+def rename_speakers(path, names):
+    """Rename diarized labels across every cue of one transcript at once."""
+    txt_path = resolve_in_data(path)
+    if txt_path is None or not txt_path.is_file():
+        raise AppError("invalid path")
+    meeting_path = meeting_json_path_for(txt_path)
+    if not meeting_path.is_file():
+        raise AppError("Segments are not available.")
+    mapping = {old: new.strip() for old, new in names.items() if new and new.strip()}
+    if not mapping:
+        raise AppError("No speaker names were provided.")
+    data = json.loads(meeting_path.read_text())
+    segments = data.get("segments") or []
+    renamed = 0
+    for segment in segments:
+        new_name = mapping.get(segment.get("speaker"))
+        if new_name and new_name != segment.get("speaker"):
+            segment["speaker"] = new_name
+            renamed += 1
+    if renamed:
+        data["segments"] = segments
+        # The stored analysis quotes the old labels, so it is now out of date.
+        data["analysis_stale"] = True
+        meeting_path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+        txt_path.write_text(_render_segments_text(segments))
+    return {"segments": segments, "renamed": renamed}
 
 
 

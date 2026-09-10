@@ -161,7 +161,7 @@ function renderItem(item) {
 
   const actions = el('div', {className: 'item-actions'});
   if (item.wav) {
-    const edit = el('button', {className: 'small accent', type: 'button', textContent: 'Edit'});
+    const edit = el('button', {className: 'small accent', type: 'button', textContent: item.txt ? 'Process' : 'Continue setup'});
     edit.onclick = () => openRecordingWorkspace(item.wav_path, item.name, item.txt);
     actions.appendChild(edit);
   }

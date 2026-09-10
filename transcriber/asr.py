@@ -16,7 +16,8 @@ import wave
 
 import httpx
 
-from .config import LOCAL_ASR_DEFAULT_LANGUAGE, SPARK_WHISPER_MODEL, SPARK_WHISPER_URL
+from .config import LOCAL_ASR_DEFAULT_LANGUAGE
+from .connections import get_connection
 from .models import get_local_asr
 
 log = logging.getLogger(__name__)
@@ -42,10 +43,11 @@ class Transcript:
 
 def remote_status():
     """Return public backend state without leaking internal endpoint details."""
-    if not SPARK_WHISPER_URL:
+    endpoint = get_connection("transcription")["endpoint"]
+    if not endpoint:
         return {"available": False, "backend": "local", "label": "Local model"}
     try:
-        base = SPARK_WHISPER_URL.removesuffix("/v1/audio/transcriptions").rstrip("/")
+        base = endpoint.removesuffix("/v1/audio/transcriptions").rstrip("/")
         response = httpx.get(f"{base}/v1/models", timeout=2.0)
         if response.is_success:
             return {"available": True, "backend": "spark", "label": "Working Spark"}
@@ -80,12 +82,13 @@ def _post_audio(path, language, timeout=3600.0, mime="audio/mpeg"):
     chunks, wav for a live-draft window posted straight through with no
     ffmpeg transcode.
     """
-    data = {"model": SPARK_WHISPER_MODEL, "response_format": "verbose_json"}
+    connection = get_connection("transcription")
+    data = {"model": connection["model"], "response_format": "verbose_json"}
     if language:
         data["language"] = language
     with path.open("rb") as audio:
         response = httpx.post(
-            SPARK_WHISPER_URL,
+            connection["endpoint"],
             data=data,
             files={"file": (path.name, audio, mime)},
             timeout=timeout,
@@ -187,9 +190,10 @@ def transcribe_live(wav_path, language, timeout, remote_available):
 
 def diagnose():
     """Why the remote engine is (not) working: probe, one real upload, last error."""
+    connection = get_connection("transcription")
     report = {
-        "url": SPARK_WHISPER_URL,
-        "model": SPARK_WHISPER_MODEL,
+        "url": connection["endpoint"],
+        "model": connection["model"],
         "probe": remote_status(),
         "last_error": _last_remote_error,
     }

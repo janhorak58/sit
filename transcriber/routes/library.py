@@ -4,7 +4,14 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from .. import library
 from ..errors import AppError
 from ..paths import resolve_in_data
-from ..schemas import DeleteReq, FolderRenameReq, MkdirReq, MoveReq, RenameSpeakerReq
+from ..schemas import (
+    DeleteReq,
+    FolderRenameReq,
+    MkdirReq,
+    MoveReq,
+    RenameSpeakersReq,
+    UpdateTranscriptReq,
+)
 
 router = APIRouter()
 
@@ -45,10 +52,14 @@ def summary_json(path: str):
     return library.read_summary_json(path) or {}
 
 
-@router.post("/library/rename-speaker")
-def rename_speaker(req: RenameSpeakerReq):
-    return library.rename_speaker(req.path, req.old, req.new)
+@router.put("/library/transcript")
+def update_transcript(req: UpdateTranscriptReq):
+    return library.update_transcript(req.path, [segment.model_dump() for segment in req.segments])
 
+
+@router.put("/library/speakers")
+def rename_speakers(req: RenameSpeakersReq):
+    return library.rename_speakers(req.path, req.names)
 
 @router.get("/library/audio")
 def audio(path: str):

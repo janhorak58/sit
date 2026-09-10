@@ -39,14 +39,14 @@ LOCAL_ASR_WINDOW_SECONDS = float(os.environ.get("LOCAL_ASR_WINDOW_SECONDS", "30"
 LOCAL_ASR_DEFAULT_LANGUAGE = os.environ.get("LOCAL_ASR_DEFAULT_LANGUAGE", "cs")
 DIARIZE_MODEL = os.environ.get("DIARIZE_MODEL", "pyannote/speaker-diarization-3.1")
 SPARK_DIARIZER_URL = os.environ.get(
-    "SPARK_DIARIZER_URL", "http://127.0.0.1:8000/v1/audio/diarizations"
+    "SPARK_DIARIZER_URL", "http://127.0.0.1:8299/v1/audio/diarizations"
 )
 SPARK_WHISPER_URL = os.environ.get(
-    "SPARK_WHISPER_URL", "http://127.0.0.1:8204/v1/audio/transcriptions"
+    "SPARK_WHISPER_URL", "http://127.0.0.1:8208/v1/audio/transcriptions"
 )
-SPARK_WHISPER_MODEL = os.environ.get("SPARK_WHISPER_MODEL", "large-v3")
-OMNIROUTE_URL = os.environ.get("OMNIROUTE_URL", "http://127.0.0.1:20128")
-OMNIROUTE_MODEL = os.environ.get("OMNIROUTE_MODEL", "cc/claude-sonnet-5")
+SPARK_WHISPER_MODEL = os.environ.get("SPARK_WHISPER_MODEL", "nemo-canary-1b-v2")
+OMNIROUTE_URL = os.environ.get("OMNIROUTE_URL", "http://127.0.0.1:8100")
+OMNIROUTE_MODEL = os.environ.get("OMNIROUTE_MODEL", "gpt-oss-120b")
 GPT_OSS_API_KEY = os.environ.get("GPT_OSS_API_KEY", "")
 MAX_RECORDING_SECONDS = int(os.environ.get("MAX_RECORDING_SECONDS", str(3 * 3600)))
 
