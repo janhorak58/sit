@@ -54,6 +54,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .engine.remote span { background: #79d18c; box-shadow: 0 0 0 4px rgba(121,209,140,.12); }
 .engine.local span { background: #e4b956; box-shadow: 0 0 0 4px rgba(228,185,86,.12); }
 .engine:hover b { text-decoration: underline; }
+.app-version { margin: 0; color: #6c7672; font: 500 10px DM Mono, monospace; letter-spacing: .1em; text-transform: uppercase; }
 
 .dashboard-main { grid-column: 2; width: 100%; max-width: 1600px; min-width: 0; margin: 0 auto; padding: 38px 42px 72px; }
 .workspace-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; margin-bottom: 25px; }
@@ -463,7 +464,7 @@ button[aria-busy="true"] { opacity: .7; }
   .side-nav a { justify-content: center; padding: 8px 5px; font-size: 10px; text-align: center; }
   .side-nav a span { display: none; }
   .side-nav .new-link { margin: 0; }
-  .side-projects, .sidebar-status .side-label { display: none; }
+  .side-projects, .sidebar-status .side-label, .app-version { display: none; }
   .sidebar-status { position: absolute; top: 20px; right: 16px; margin: 0; padding: 0; border: 0; }
   .engine b { display: none; }
   .dashboard-main { padding: 25px 14px 52px; }
