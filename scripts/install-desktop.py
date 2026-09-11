@@ -18,6 +18,11 @@ Supported: Arch Linux, Ubuntu/Debian, and WSL2 with WSLg (also Linux under
 the hood). Any other platform (native Windows, macOS) is rejected outright -
 this project has no supported build for those.
 
+On WSL2 the same entry is additionally installed to
+/usr/share/applications/sit.desktop (via sudo), because WSLg only scans
+system application directories when it generates Windows Start menu
+shortcuts - a per-user entry alone never shows up in the Windows menu.
+
 Prerequisites (see README.md for the full setup):
   - a `.venv` at the repo root with the Python dependencies installed
   - a release build of the desktop shell: `cd src-tauri && cargo build --release`
@@ -35,6 +40,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -50,6 +56,11 @@ if not XDG_DATA_HOME.is_absolute():
 LAUNCHER_PATH = Path.home() / ".local" / "bin" / APP_ID
 DESKTOP_ENTRY_PATH = XDG_DATA_HOME / "applications" / f"{APP_ID}.desktop"
 ICON_PATH = XDG_DATA_HOME / "icons" / f"{APP_ID}.png"
+
+# WSLg builds the Windows Start menu from system application directories only
+# (/usr/share/applications and friends); ~/.local/share/applications is never
+# scanned. On WSL the user entry is therefore mirrored here.
+SYSTEM_ENTRY_PATH = Path("/usr/share/applications") / f"{APP_ID}.desktop"
 
 LEGACY_DESKTOP_ENTRY_PATH = XDG_DATA_HOME / "applications" / "transcriber.desktop"
 LEGACY_DESKTOP_EXEC = Path.home() / ".local" / "lib" / "transcriber" / "transcriber-desktop"
@@ -69,6 +80,10 @@ COMMENT = (
 )
 
 
+def is_wsl() -> bool:
+    return "microsoft" in platform.uname().release.lower()
+
+
 def check_supported_platform() -> None:
     if sys.platform != "linux":
         raise SystemExit(
@@ -76,8 +91,7 @@ def check_supported_platform() -> None:
             "Linux (Arch, Ubuntu/Debian) and WSL2 with WSLg on Windows 11 - "
             "there is no native Windows or macOS build of this project."
         )
-    release = platform.uname().release.lower()
-    if "microsoft" in release:
+    if is_wsl():
         print(
             "Detected WSL2. Showing the window and playing audio needs WSLg "
             "(bundled with current Windows 11 + `wsl --update`). Capturing "
@@ -150,10 +164,8 @@ def write_icon() -> None:
     print(f"{'Overwrote' if existed else 'Installed'} icon: {ICON_PATH}")
 
 
-def write_desktop_entry() -> None:
-    DESKTOP_ENTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    existed = DESKTOP_ENTRY_PATH.exists()
-    entry = (
+def desktop_entry_text() -> str:
+    return (
         "[Desktop Entry]\n"
         "Type=Application\n"
         "Version=1.0\n"
@@ -166,15 +178,87 @@ def write_desktop_entry() -> None:
         "Categories=AudioVideo;Audio;\n"
         "X-SIT-Managed=true\n"
     )
-    DESKTOP_ENTRY_PATH.write_text(entry, encoding="utf-8")
+
+
+def write_desktop_entry() -> None:
+    DESKTOP_ENTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    existed = DESKTOP_ENTRY_PATH.exists()
+    DESKTOP_ENTRY_PATH.write_text(desktop_entry_text(), encoding="utf-8")
     print(f"{'Overwrote' if existed else 'Created'} desktop entry: {DESKTOP_ENTRY_PATH}")
     update_db = shutil.which("update-desktop-database")
     if update_db:
-        import subprocess
+        subprocess.run([update_db, str(DESKTOP_ENTRY_PATH.parent)], check=False)
 
-        subprocess.run(
-            [update_db, str(DESKTOP_ENTRY_PATH.parent)], check=False
+
+def _root_command(argv) -> list[str]:
+    """``argv`` run as root, prefixed with sudo unless already root."""
+    return argv if os.geteuid() == 0 else ["sudo", *argv]
+
+
+def _system_entry_is_ours() -> bool:
+    """True when /usr/share/applications/sit.desktop is this installer's file.
+
+    Read as the current user: the directory is world-readable, and refusing to
+    escalate just to inspect a file keeps a foreign entry from being replaced
+    silently.
+    """
+    try:
+        return _is_managed_text(SYSTEM_ENTRY_PATH, "X-SIT-Managed=true")
+    except OSError:
+        return False
+
+
+def write_system_entry() -> None:
+    """Mirror the entry into /usr/share/applications so WSLg exports it.
+
+    Only reached on WSL. Without this copy the app never appears in the
+    Windows Start menu: WSLg's shortcut generator ignores per-user desktop
+    directories entirely.
+    """
+    if SYSTEM_ENTRY_PATH.exists() and not _system_entry_is_ours():
+        print(
+            f"Not touching a foreign {SYSTEM_ENTRY_PATH}; the Windows Start "
+            "menu entry was left as it is."
         )
+        return
+    handle, staged_name = tempfile.mkstemp(prefix=f"{APP_ID}-", suffix=".desktop")
+    staged = Path(staged_name)
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(desktop_entry_text())
+        result = subprocess.run(
+            _root_command(["install", "-D", "-m", "644", str(staged), str(SYSTEM_ENTRY_PATH)]),
+            check=False,
+        )
+    finally:
+        staged.unlink(missing_ok=True)
+    if result.returncode != 0:
+        print(
+            "Could not write the system-wide entry needed by the Windows Start "
+            "menu. Run this yourself, then restart WSL (`wsl --shutdown`):\n"
+            f"  sudo cp {DESKTOP_ENTRY_PATH} {SYSTEM_ENTRY_PATH}\n"
+            f"  sudo chmod 644 {SYSTEM_ENTRY_PATH}"
+        )
+        return
+    # WSLg reads the icon straight from the path in the entry, so the per-user
+    # icon and its parents must stay traversable for the exporting service.
+    for path in (ICON_PATH.parent, ICON_PATH):
+        subprocess.run(["chmod", "o+rX", str(path)], check=False)
+    print(f"Installed the Windows Start menu entry: {SYSTEM_ENTRY_PATH}")
+    print("It appears after WSLg refreshes; `wsl --shutdown` in PowerShell forces it.")
+
+
+def remove_system_entry() -> None:
+    if not SYSTEM_ENTRY_PATH.exists():
+        return
+    if not _system_entry_is_ours():
+        print(f"Leaving a foreign entry unchanged: {SYSTEM_ENTRY_PATH}")
+        return
+    result = subprocess.run(_root_command(["rm", "-f", str(SYSTEM_ENTRY_PATH)]), check=False)
+    if result.returncode == 0:
+        print(f"Removed: {SYSTEM_ENTRY_PATH}")
+    else:
+        print(f"Could not remove it; run: sudo rm {SYSTEM_ENTRY_PATH}")
 
 
 def _is_managed_text(path, marker) -> bool:
@@ -289,6 +373,8 @@ def install() -> None:
     write_launcher()
     write_icon()
     write_desktop_entry()
+    if is_wsl():
+        write_system_entry()
     migrate_shit_installation()
     migrate_legacy_desktop_entry()
     migrate_legacy_service()
@@ -302,6 +388,7 @@ def install() -> None:
 def uninstall() -> None:
     check_supported_platform()
     check_managed_paths()
+    remove_system_entry()
     removed = []
     for path in (LAUNCHER_PATH, DESKTOP_ENTRY_PATH, ICON_PATH):
         if path.exists():
