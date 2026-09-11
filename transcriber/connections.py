@@ -370,6 +370,10 @@ FORWARD_TIMEOUT = 15.0
 # no command. Success is proven by a throwaway -L forward binding locally,
 # which only happens after authentication succeeds.
 SSH_TEST_TIMEOUT = 20.0
+# How often a supervised manager re-checks its tunnels. The backend can boot
+# before the VPN is up (autostart at login), so a failed start is retried
+# instead of leaving the services dead until someone opens Connections.
+SUPERVISE_INTERVAL = 15.0
 
 
 def _ssh_command(ssh):
@@ -459,6 +463,9 @@ class TunnelManager:
         self._processes = {}
         self._errors = {}
         self._services = {}
+        # Set once the process is shutting down: the supervisor must not
+        # resurrect tunnels that stop() just tore down.
+        self._closing = threading.Event()
 
     def _reap(self):
         for host, process in list(self._processes.items()):
@@ -554,6 +561,42 @@ class TunnelManager:
 
     def restart(self):
         return self.start()
+
+    def _needs_start(self):
+        """True when a configured host has no live ssh process behind it."""
+        if self._closing.is_set():
+            return False
+        config = get_connections()
+        if not config["ssh"]["enabled"]:
+            return False
+        with self._lock:
+            self._reap()
+            try:
+                _validate_tunnel_config(config)
+                plan = _plan(config)
+            except AppError:
+                # A broken configuration is not fixed by retrying; the user
+                # corrects it in Connections, which calls restart() itself.
+                return False
+            return any(host not in self._processes for host in plan)
+
+    def supervise(self):
+        """Start the tunnels and keep restarting the ones that are down.
+
+        Runs for the lifetime of the process. The backend now starts at login,
+        long before the VPN is connected, so the first attempt usually fails;
+        without this loop the remote engine would stay unreachable until
+        someone pressed Reconnect.
+        """
+        self.start()
+        while not self._closing.wait(SUPERVISE_INTERVAL):
+            if self._needs_start():
+                self.start()
+
+    def close(self):
+        """Stop supervising and tear the tunnels down."""
+        self._closing.set()
+        self.stop()
 
     def status(self):
         with self._lock:

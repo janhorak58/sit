@@ -33,15 +33,18 @@ class NoCacheStaticFiles(StaticFiles):
 async def lifespan(app: FastAPI):
     # SSH auth against an unreachable host can take up to FORWARD_TIMEOUT +
     # SSH_TEST_TIMEOUT seconds; run it off the startup path so uvicorn binds
-    # immediately. Shutdown joins this thread first so tunnels.stop() never
-    # races a start() still building its process list under the same lock.
-    tunnel_thread = threading.Thread(target=tunnels.start, daemon=True)
+    # immediately. The supervisor keeps retrying, which is what makes an
+    # autostarted backend usable once the VPN comes up later. Shutdown joins
+    # this thread first so tunnels.stop() never races a start() still building
+    # its process list under the same lock.
+    tunnel_thread = threading.Thread(target=tunnels.supervise, daemon=True)
     tunnel_thread.start()
     try:
         yield
     finally:
         recorder.stop()
-        tunnel_thread.join()
+        tunnels.close()
+        tunnel_thread.join(timeout=30)
         tunnels.stop()
 
 

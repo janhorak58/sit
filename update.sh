@@ -29,9 +29,18 @@ PY=.venv/bin/python
 [ -x "$PY" ] || { echo "update.sh: $PY missing; run the install steps in README.md first" >&2; exit 1; }
 
 # A running backend holds the ONNX models and the port; updating under it would
-# leave a mismatched process alive.
+# leave a mismatched process alive. The installed background service is ours to
+# stop and start again; anything else (an open window, a hand-started backend)
+# still has to be closed by the user.
 PORT=${TRANSCRIBER_PORT:-47831}
+SERVICE_STOPPED=0
+if systemctl --user is-active --quiet sit.service 2>/dev/null; then
+  say "Stopping the background service"
+  systemctl --user stop sit.service
+  SERVICE_STOPPED=1
+fi
 if curl -fsS --max-time 2 "http://127.0.0.1:$PORT/asr/status" >/dev/null 2>&1; then
+  [ "$SERVICE_STOPPED" = 1 ] && systemctl --user start sit.service
   echo "update.sh: SIT is running on 127.0.0.1:$PORT - close the window / stop the backend first" >&2
   exit 1
 fi
@@ -83,4 +92,9 @@ if [ -x "$BIN" ]; then
   fi
 fi
 
-say "Done. Start SIT with .venv/bin/python -m transcriber (or ~/.local/bin/sit)."
+if [ "$SERVICE_STOPPED" = 1 ]; then
+  say "Starting the background service again"
+  systemctl --user start sit.service
+fi
+
+say "Done. SIT runs in the background; open the window from the menu or ~/.local/bin/sit."

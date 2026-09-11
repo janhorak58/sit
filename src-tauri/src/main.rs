@@ -103,11 +103,13 @@ fn start_backend() -> Result<Option<OwnedBackend>, String> {
         eprintln!("SIT: reusing backend at {BACKEND_ADDR}");
         return Ok(None);
     }
-    // Keep compatibility with existing Linux installations, but never require
-    // systemd. Bound even the systemctl client, not just the readiness wait.
+    // The installer registers sit.service as a lingering user unit, so after a
+    // reboot the backend is normally already up and this path is not reached.
+    // Never require systemd: bound even the systemctl client, not just the
+    // readiness wait.
     #[cfg(target_os = "linux")]
     if let Ok(mut service) = Command::new("systemctl")
-        .args(["--user", "--no-block", "start", "transcriber.service"])
+        .args(["--user", "--no-block", "start", "sit.service"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -132,7 +134,7 @@ fn start_backend() -> Result<Option<OwnedBackend>, String> {
                 }
                 thread::sleep(Duration::from_millis(200));
             }
-            return Err("transcriber.service was started but did not become ready. Check journalctl --user -u transcriber.service.".into());
+            return Err("sit.service was started but did not become ready. Check journalctl --user -u sit.service.".into());
         }
     }
     let (project, python) = backend_paths()?;
