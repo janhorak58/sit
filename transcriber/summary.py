@@ -135,6 +135,21 @@ def _transcript_lines(text, segments):
     return "\n".join(lines), turns
 
 
+def _failure_detail(exc):
+    """What the LLM server actually said, for an error the user can act on.
+
+    A private endpoint rejecting the request (unknown model, unsupported
+    response_format, out of context) answers with a body that names the cause.
+    Hiding it behind "check the Connections panel" left no way to tell those
+    apart from a broken tunnel without reading the backend log.
+    """
+    response = getattr(exc, "response", None)
+    if response is None:
+        return f"{type(exc).__name__}: {exc}"[:500]
+    body = (response.text or "").strip().replace("\n", " ")
+    return f"HTTP {response.status_code} from the LLM server: {body[:400] or '(empty body)'}"
+
+
 def _extract_json(content):
     """Best-effort JSON extraction: strip code fences, else find the first {...} block."""
     content = content.strip()
@@ -246,12 +261,14 @@ def summarize(text, project="", segments=None, previous_context="", instructions
     except httpx.RequestError as exc:
         logger.warning("AI analysis server unreachable at %s: %s", endpoint, exc)
         raise AppError(
-            "The AI analysis server could not be reached. Check the Connections panel."
+            "The AI analysis server could not be reached. Check the Connections panel. "
+            f"Detail: {exc}"
         ) from exc
     except (httpx.HTTPStatusError, KeyError, ValueError) as exc:
         logger.warning("AI analysis failed: %s", exc)
         raise AppError(
-            "The AI analysis could not be generated. Check the Connections panel."
+            "The AI analysis could not be generated. Check the Connections panel. "
+            f"Detail: {_failure_detail(exc)}"
         ) from exc
     parsed = _extract_json(content)
     return {**EMPTY_SUMMARY, "summary": content.strip()} if not isinstance(parsed, dict) else _normalize(parsed, turns)

@@ -179,7 +179,10 @@ def _create_summary(transcript, path, project, preferences):
         progress.finish(stage="error", message=str(exc), error=str(exc), saved_path=path)
     except Exception as exc:
         logger.warning("AI analysis failed for %s: %s", path, exc)
-        message = "The AI analysis could not be generated. Check the Connections panel."
+        message = (
+            "The AI analysis could not be generated. Check the Connections panel. "
+            f"Detail: {type(exc).__name__}: {exc}"[:600]
+        )
         progress.finish(stage="error", message=message, error=message, saved_path=path)
 
 
