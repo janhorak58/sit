@@ -83,6 +83,9 @@ SAMPLE_RATE = "16000"
 HOST = os.environ.get("TRANSCRIBER_HOST", "127.0.0.1")
 PORT = int(os.environ.get("TRANSCRIBER_PORT", "47831"))
 
+# Shown in the sidebar and by /version. Pre-release: no compatibility promises.
+APP_VERSION = "0 alpha"
+
 WEB_DIR = Path(__file__).resolve().parent / "web"
 STATIC_DIR = WEB_DIR / "static"
 INDEX_HTML = WEB_DIR / "index.html"

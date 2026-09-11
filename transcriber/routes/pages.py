@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from fastapi.responses import FileResponse
 
-from ..config import INDEX_HTML, STATIC_DIR
+from ..config import APP_VERSION, INDEX_HTML, STATIC_DIR
 
 router = APIRouter()
 
@@ -22,3 +22,8 @@ def index():
         media_type="text/html",
         headers={"Cache-Control": "no-cache"},
     )
+
+
+@router.get("/version")
+def version():
+    return {"version": APP_VERSION}

@@ -36,4 +36,10 @@ initViews(view => {
   if (view !== 'meeting') closeMeeting();
 });
 
+// The sidebar ships a static fallback; the backend owns the real string.
+fetch('/version')
+  .then(response => response.json())
+  .then(data => { if (data.version) $('app-version').textContent = 'v' + data.version; })
+  .catch(() => {});
+
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
