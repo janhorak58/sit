@@ -8,16 +8,27 @@ const RECENT_KEY = 'transcriber.recent';
 let listing = {subfolders: [], items: []};
 let moveTarget = null;
 
+// Recordings kept in their own folder are listed by the parent folder, so an
+// item's paths come from item.dir, never from the folder being browsed.
+function itemFolder(item) {
+  return item.dir ?? state.currentFolder;
+}
+
+function itemPath(item, suffix = '') {
+  const folder = itemFolder(item);
+  return (folder ? folder + '/' : '') + item.name + suffix;
+}
+
 function remember(item, path) {
   let recent = [];
   try { recent = JSON.parse(localStorage.getItem(RECENT_KEY)) || []; } catch {}
   recent = recent.filter(entry => entry.path !== path);
-  recent.unshift({path, wavPath: item.wav_path, title: item.name, folder: state.currentFolder});
+  recent.unshift({path, wavPath: item.wav_path, title: item.name, folder: itemFolder(item)});
   localStorage.setItem(RECENT_KEY, JSON.stringify(recent.slice(0, 6)));
 }
 
 async function viewItem(item) {
-  const path = childPath(item.name) + '.txt';
+  const path = itemPath(item, '.txt');
   remember(item, path);
   await openMeeting(path, item.wav_path, item.name);
 }
@@ -90,9 +101,11 @@ async function deleteFolder(name) {
 }
 
 function openMoveDialog(item) {
-  moveTarget = {...item, folder: state.currentFolder};
+  moveTarget = {...item, folder: itemFolder(item)};
   $('move-title').textContent = item.name;
   $('move-folder').parentElement.hidden = false;
+  // Offer the folder the user is browsing: a meeting inside its own wrapper
+  // folder should read as living in the project, not in the wrapper.
   $('move-folder').value = state.currentFolder;
   $('move-name').value = item.name;
   $('move-dialog').showModal();
@@ -185,7 +198,7 @@ function renderItem(item) {
   menu.appendChild(move);
   if (item.txt) {
     const del = el('button', {className: 'danger-action', type: 'button', textContent: 'Delete transcript'});
-    del.onclick = () => deletePath(childPath(item.name) + '.txt', 'transcript');
+    del.onclick = () => deletePath(itemPath(item, '.txt'), 'transcript');
     menu.appendChild(del);
   }
   if (item.summary) {
@@ -309,8 +322,11 @@ export function initLibrary() {
     const finished = moveTarget;
     $('move-dialog').close();
     moveTarget = null;
-    updateRecentItem(finished.folder, finished.name, toFolder, toName);
-    finished.onSuccess?.(toFolder, toName);
+    // Renaming a meeting renames its wrapper folder too, so the artifacts end
+    // up where the server says, not necessarily under the requested folder.
+    const landedIn = result.folder ?? toFolder;
+    updateRecentItem(finished.folder, finished.name, landedIn, toName);
+    finished.onSuccess?.(landedIn, toName);
     loadLibrary();
     window.dispatchEvent(new Event('transcriber:library-changed'));
   };

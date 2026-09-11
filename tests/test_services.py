@@ -162,7 +162,9 @@ def test_move_item_moves_all_artifacts_or_none(monkeypatch, tmp_path):
     (source / "meeting.summary.md").write_text("summary")
     (source / "audio" / "meeting.wav").write_bytes(b"wav")
 
-    assert library.move_item("source", "meeting", "destination", "renamed", "source/audio/meeting.wav") == ["txt", "summary.md", "wav"]
+    result = library.move_item("source", "meeting", "destination", "renamed", "source/audio/meeting.wav")
+    assert result["moved"] == ["txt", "summary.md", "wav"]
+    assert result["folder"] == "destination"
     assert (tmp_path / "destination" / "renamed.txt").read_text() == "transcript"
     assert (tmp_path / "destination" / "renamed.summary.md").read_text() == "summary"
     assert (tmp_path / "destination" / "audio" / "renamed.wav").read_bytes() == b"wav"
@@ -567,8 +569,8 @@ def test_move_item_moves_meeting_and_summary_json_sidecars(monkeypatch, tmp_path
     (tmp_path / "meeting.meeting.json").write_text("{}")
     (tmp_path / "meeting.summary.json").write_text("{}")
 
-    kinds = library.move_item("", "meeting", "", "renamed")
-    assert set(kinds) == {"txt", "meeting.json", "summary.json"}
+    result = library.move_item("", "meeting", "", "renamed")
+    assert set(result["moved"]) == {"txt", "meeting.json", "summary.json"}
     assert (tmp_path / "renamed.meeting.json").is_file()
     assert (tmp_path / "renamed.summary.json").is_file()
 
