@@ -371,6 +371,15 @@ cargo --version
 rustc --version
 ```
 
+In **fish**, `~/.cargo/env` is a POSIX sh script and fails with
+`'case' builtin not inside of switch block`; source the fish file rustup
+installs next to it, or put Cargo on the path permanently:
+
+```fish
+test -f ~/.cargo/env.fish && source ~/.cargo/env.fish
+fish_add_path ~/.cargo/bin
+```
+
 The native-only Linux packages from your platform section — compiler toolchain,
 `pkg-config`, WebKitGTK 4.1, OpenSSL, xdotool, appindicator, and librsvg — must
 be installed before building. From the repository root, create the optimized
