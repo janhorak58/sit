@@ -338,13 +338,15 @@ The desktop shell is a Rust/Tauri binary. Build it only after completing the
 common Python setup above: it starts `.venv/bin/python -m transcriber` when no
 backend is already listening, so a Cargo build alone is not a complete SIT
 install.
-
 Install stable Rust with [rustup](https://rustup.rs/) (the Arch and Fedora
-platform commands above install it from the distribution). If you used the
-rustup installer, make Cargo available in the current shell:
+platform commands above install it from the distribution). Select the stable
+toolchain before using Cargo — a distribution `rustup` install can exist
+without one:
 
 ```bash
-source "$HOME/.cargo/env"
+rustup default stable
+# Only needed after using the rustup installer; harmlessly skip it otherwise.
+test ! -f "$HOME/.cargo/env" || source "$HOME/.cargo/env"
 cargo --version
 rustc --version
 ```
