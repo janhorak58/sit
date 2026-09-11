@@ -562,6 +562,12 @@ First-run seeds for the **Connections** panel, ignored once
 A `.env` at the checkout root is still read for these variables, but it is a
 leftover, not a supported way to configure SIT.
 
+The LLM **API key** is a field in Connections next to the model
+(`Authorization: Bearer …`); a stored key is never sent back to the browser,
+an empty field keeps it, and "Forget the stored API key" clears it. When the
+server answers 401/403, Service diagnostics says the key was rejected instead
+of reporting the endpoint as running.
+
 Local pyannote needs you to accept the model terms at
 [speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) and
 [segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0).

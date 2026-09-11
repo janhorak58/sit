@@ -25,6 +25,7 @@ from urllib.parse import urlsplit
 from .config import (
     DATA_DIR,
     DIARIZE_MODEL,
+    GPT_OSS_API_KEY,
     HF_TOKEN,
     OMNIROUTE_MODEL,
     OMNIROUTE_URL,
@@ -110,6 +111,10 @@ DEFAULTS = {
         "model": OMNIROUTE_MODEL or FALLBACKS["llm"][2],
         "host": "" if _llm_origin in ("", _base_url) else _llm_origin,
         "ssh_host": "",
+        # Bearer token for the OpenAI-compatible endpoint. Same reasoning as
+        # diarization.hf_token: never seeded from the environment here, or an
+        # unrelated save would clobber the stored key.
+        "api_key": "",
     },
 }
 
@@ -219,6 +224,9 @@ def normalize_connections(values):
     merged["diarization"]["hf_token"] = _clean_text(
         merged["diarization"]["hf_token"], "HuggingFace token", optional=True
     )
+    merged["llm"]["api_key"] = _clean_text(
+        merged["llm"]["api_key"], "LLM API key", optional=True
+    )
 
     used = {}
     for name in SERVICES:
@@ -273,6 +281,8 @@ def get_connections():
             _cached = normalize_connections(values)
             if bootstrap and HF_TOKEN and not _cached["diarization"]["hf_token"]:
                 _cached["diarization"]["hf_token"] = HF_TOKEN
+            if bootstrap and GPT_OSS_API_KEY and not _cached["llm"]["api_key"]:
+                _cached["llm"]["api_key"] = GPT_OSS_API_KEY
         return deepcopy(_cached)
 
 
@@ -288,22 +298,27 @@ def get_connection(name):
 
 
 def public_connections():
-    """Everything the browser may see: the HuggingFace token stays server-side."""
+    """Everything the browser may see: the stored secrets stay server-side."""
     config = get_connections()
     token = config["diarization"].pop("hf_token")
     config["diarization"]["hf_token_set"] = bool(token)
+    api_key = config["llm"].pop("api_key")
+    config["llm"]["api_key_set"] = bool(api_key)
     return config
 
 
 def save_connections(values):
-    """Persist settings. An empty ``hf_token`` keeps the stored one; the UI
-    clears it explicitly with ``forget_hf_token``, since the browser never
-    receives the token it would otherwise have to send back."""
+    """Persist settings. An empty ``hf_token`` / ``api_key`` keeps the stored
+    one; the UI clears them explicitly with ``forget_hf_token`` and
+    ``forget_llm_api_key``, since the browser never receives the secret it
+    would otherwise have to send back."""
     global _cached
     normalized = normalize_connections(values)
-    keep = not (isinstance(values, dict) and values.get("forget_hf_token"))
-    if not normalized["diarization"]["hf_token"] and keep:
+    asked = values if isinstance(values, dict) else {}
+    if not normalized["diarization"]["hf_token"] and not asked.get("forget_hf_token"):
         normalized["diarization"]["hf_token"] = get_connections()["diarization"]["hf_token"]
+    if not normalized["llm"]["api_key"] and not asked.get("forget_llm_api_key"):
+        normalized["llm"]["api_key"] = get_connections()["llm"]["api_key"]
     _validate_tunnel_config(normalized)
     with _lock:
         CONNECTIONS_PATH.parent.mkdir(parents=True, exist_ok=True)

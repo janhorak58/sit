@@ -333,3 +333,24 @@ def test_hf_token_is_write_only_kept_on_save_and_cleared_on_request(monkeypatch,
     connections.save_connections({**public, "forget_hf_token": True})
     assert connections.get_connection("diarization")["hf_token"] == ""
     assert connections.public_connections()["diarization"]["hf_token_set"] is False
+
+
+def test_llm_api_key_is_write_only_kept_on_save_and_cleared_on_request(monkeypatch, tmp_path):
+    monkeypatch.setattr(connections, "CONNECTIONS_PATH", tmp_path / "connections.json")
+    monkeypatch.setattr(connections, "_cached", None)
+
+    connections.save_connections({"ssh": {"enabled": False}, "llm": {"api_key": "sk-secret"}})
+    assert connections.get_connection("llm")["api_key"] == "sk-secret"
+
+    public = connections.public_connections()
+    assert "api_key" not in public["llm"]
+    assert public["llm"]["api_key_set"] is True
+
+    # A form round-trip carries an empty field back; the key must survive it.
+    public["llm"]["api_key"] = ""
+    connections.save_connections(public)
+    assert connections.get_connection("llm")["api_key"] == "sk-secret"
+
+    connections.save_connections({**public, "forget_llm_api_key": True})
+    assert connections.get_connection("llm")["api_key"] == ""
+    assert connections.public_connections()["llm"]["api_key_set"] is False
