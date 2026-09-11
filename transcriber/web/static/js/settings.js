@@ -5,16 +5,36 @@ let currentConnections = null;
 
 // Known remote failures mapped to the one thing that actually fixes them.
 const HINTS = [
-  [/vllm\[audio\]/i, 'Spark is missing vLLM audio support — install `pip install vllm[audio]` and restart the server. Until then everything will run locally.'],
-  [/Maximum file size|audio_filesize_mb/i, 'The server is rejecting large files. Transcription is sent in 15-minute mp3 chunks; if the limit still hits, raise vLLM `--max-audio-filesize-mb`.'],
-  [/Connection refused|ConnectError|timed out/i, 'The local endpoint is not responding — check the SSH tunnel, VPN, host, and port.'],
-  [/404|Not Found/i, 'The server is reachable, but the configured API path does not exist.'],
-  [/model/i, 'Model not found — the configured model must match one from /v1/models.'],
+  [/vllm\[audio\]/i,
+    'The remote transcription service cannot process audio right now, so this computer is transcribing instead.',
+    'The server is missing vLLM audio support: run pip install vllm[audio] there and restart it.'],
+  [/Maximum file size|audio_filesize_mb/i,
+    'The remote service rejected a recording for being too large.',
+    'Transcription is sent in 15-minute chunks; if the limit still hits, raise the server\'s --max-audio-filesize-mb setting.'],
+  [/Connection refused|ConnectError|timed out/i,
+    'This computer cannot reach the configured remote address.',
+    'Check the SSH tunnel, VPN, host, and port.'],
+  [/404|Not Found/i,
+    'The remote server was reached, but it does not recognize the configured address.',
+    'The configured API path does not exist on that server.'],
+  [/model/i,
+    'The remote server does not have the configured model available.',
+    'The configured model name must match one the server actually serves.'],
 ];
 
 function hintFor(detail) {
   const found = HINTS.find(([re]) => re.test(detail || ''));
-  return found ? found[1] : null;
+  return found ? {plain: found[1], advanced: found[2]} : null;
+}
+
+function hintNode(hint) {
+  return el('div', {}, [
+    el('p', {className: 'sethint', textContent: '→ ' + hint.plain}),
+    el('details', {className: 'advanced-options'}, [
+      el('summary', {textContent: 'Technical detail'}),
+      el('div', {className: 'advanced-body'}, [el('p', {textContent: hint.advanced})]),
+    ]),
+  ]);
 }
 
 function row(label, value, state) {
@@ -129,15 +149,15 @@ async function loadDiagnostics() {
   const cards = [
     ...tunnelCards(j.ssh),
     card('Remote transcription', [
-      row('Status', ok ? 'Working — transcriptions use Spark' : 'Unavailable — using local model', ok ? 'ok' : 'bad'),
-      row('Endpoint', remote.url),
+      row('Status', ok ? 'Working — using the remote engine' : 'Unavailable — using the engine on this computer', ok ? 'ok' : 'bad'),
+      row('Address', remote.url),
       row('Model', remote.model),
-      row('/v1/models response', remote.probe && remote.probe.available ? 'OK' : 'unavailable', remote.probe && remote.probe.available ? 'ok' : 'bad'),
-      row('Upload test (1s of audio)', upload.detail),
-      row('Last transcription error', remote.last_error),
-      ...(hint ? [el('p', {className: 'sethint', textContent: '→ ' + hint})] : []),
+      row('Server has this model', remote.probe && remote.probe.available ? 'Yes' : 'Could not confirm', remote.probe && remote.probe.available ? 'ok' : 'bad'),
+      row('Connection test', upload.detail),
+      row('Last error', remote.last_error),
+      ...(hint ? [hintNode(hint)] : []),
     ]),
-    card('Local transcription fallback', [
+    card('Transcription on this computer (fallback)', [
       row('Model', (j.local || {}).model),
       row('Device', (j.local || {}).device),
       row('Precision', (j.local || {}).compute_type),
@@ -145,20 +165,20 @@ async function loadDiagnostics() {
     card('Speaker recognition', [
       row(
         'Primary engine',
-        diarizationRemote.available ? 'Remote Spark' : 'Spark unavailable — local fallback',
+        diarizationRemote.available ? 'Remote engine' : 'Remote engine unavailable — using local fallback',
         diarizationRemote.available ? 'ok' : 'bad',
       ),
-      row('Spark model', diarizationRemote.model),
-      row('Spark device', diarizationRemote.device),
-      row('Local fallback', diarization.local_model),
+      row('Remote model', diarizationRemote.model),
+      row('Remote device', diarizationRemote.device),
+      row('Local fallback model', diarization.local_model),
       row(
-        'HF_TOKEN for fallback',
-        diarization.hf_token ? 'set' : 'missing',
+        'Access token for local fallback',
+        diarization.hf_token ? 'Saved' : 'Not set',
         diarization.hf_token ? 'ok' : 'bad',
       ),
       ...(diarizationRemote.last_error ? [el('p', {
         className: 'sethint',
-        textContent: '→ Spark diarization: ' + diarizationRemote.last_error,
+        textContent: '→ Remote speaker recognition: ' + diarizationRemote.last_error,
       })] : []),
     ]),
     card('AI analysis', [

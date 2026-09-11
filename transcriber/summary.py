@@ -11,12 +11,15 @@ already expects.
 """
 
 import json
+import logging
 
 import httpx
 
 from .config import GPT_OSS_API_KEY
 from .connections import get_connection
 from .errors import AppError
+
+logger = logging.getLogger(__name__)
 
 
 def remote_status():
@@ -240,8 +243,16 @@ def summarize(text, project="", segments=None, previous_context="", instructions
         )
         response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"]
-    except (httpx.HTTPError, KeyError, ValueError) as exc:
-        raise AppError(f"Failed to generate summary: {exc}") from exc
+    except httpx.RequestError as exc:
+        logger.warning("AI analysis server unreachable at %s: %s", endpoint, exc)
+        raise AppError(
+            "The AI analysis server could not be reached. Check the Connections panel."
+        ) from exc
+    except (httpx.HTTPStatusError, KeyError, ValueError) as exc:
+        logger.warning("AI analysis failed: %s", exc)
+        raise AppError(
+            "The AI analysis could not be generated. Check the Connections panel."
+        ) from exc
     parsed = _extract_json(content)
     return {**EMPTY_SUMMARY, "summary": content.strip()} if not isinstance(parsed, dict) else _normalize(parsed, turns)
 

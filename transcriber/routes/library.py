@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse
 
 from .. import library
 from ..errors import AppError
@@ -85,8 +85,5 @@ def delete(req: DeleteReq):
 def download(path: str | None = None):
     target = resolve_in_data(path) if path else None
     if target is None or not target.is_file():
-        return PlainTextResponse("")
-    return PlainTextResponse(
-        target.read_text(),
-        headers={"Content-Disposition": f"attachment; filename={target.name}"},
-    )
+        raise AppError("File not found.")
+    return FileResponse(target, filename=target.name)

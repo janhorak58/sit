@@ -3,9 +3,12 @@ import {$, el} from './dom.js';
 import {showView} from './views.js';
 import {getPreferences} from './customizations.js';
 import {speakerNameEditor} from './speakers.js';
+import {forgetRecentPath} from './library.js';
 
 let segRows = [];
 let meetingState = null;
+
+export const hasOpenMeeting = () => meetingState !== null;
 let progressTimer = null;
 let progressRequest = 0;
 let elapsedTimer = null;
@@ -19,6 +22,15 @@ const hasSummary = summary => Boolean(summary && (
   summary.follow_up ||
   SUMMARY_LIST_FIELDS.some(field => Array.isArray(summary[field]) && summary[field].length)
 ));
+const SECTION_LABELS = {
+  chapters: 'Chapters',
+  decisions: 'Decisions',
+  action_items: 'Action items',
+  open_questions: 'Open questions',
+  risks: 'Risks',
+  speaker_contributions: 'Speaker contributions',
+  follow_up: 'Follow-up draft',
+};
 const folderFor = path => path.slice(0, path.lastIndexOf('/'));
 const formatTime = seconds => {
   const s = Math.max(0, Math.floor(seconds || 0));
@@ -172,16 +184,37 @@ function progressCard(progress) {
   const elapsed = active && meetingState.progressStartedAt ? Math.floor((Date.now() - meetingState.progressStartedAt) / 1000) : null;
   const message = (progress.message || '') + (elapsed != null ? ` (${formatTime(elapsed)} elapsed)` : '');
   const indeterminate = active && progress.operation === 'summarize';
+  const heading = active ? `${label} in progress` : progress.stage === 'error' ? `${label} failed` : `${label} finished`;
+  let stop = null;
+  if (active) {
+    stop = el('button', {className: 'small quiet', type: 'button', textContent: 'Stop this step'});
+    stop.onclick = async () => {
+      stop.disabled = true;
+      const result = await api.cancelJob();
+      if (result.error) { stop.disabled = false; alert('Could not stop: ' + result.error); return; }
+      await refreshProgress();
+    };
+  }
   return el('section', {className: `meeting-progress ${progress.stage === 'error' ? 'is-error' : ''}`}, [
-    el('div', {}, [el('b', {textContent: active ? `${label} in progress` : `${label} ${progress.stage}`}), el('span', {textContent: message})]),
+    el('div', {}, [el('b', {textContent: heading}), el('span', {textContent: message})]),
     active ? el('div', {className: `meeting-progress-bar ${indeterminate ? 'indeterminate' : ''}`}, [el('i', indeterminate ? {} : {style: `width:${progress.percent || 5}%`})]) : null,
+    stop,
   ].filter(Boolean));
+}
+
+function refreshErrorCard() {
+  if (!meetingState?.refreshError) return null;
+  return el('section', {className: 'meeting-progress is-error'}, [
+    el('div', {}, [el('b', {textContent: 'Could not refresh'}), el('span', {textContent: meetingState.refreshError})]),
+  ]);
 }
 
 function progressSlot() {
   const slot = el('div', {className: 'meeting-progress-slot'});
   const card = progressCard(meetingState.progress || {});
   if (card) slot.append(card);
+  const errorCard = refreshErrorCard();
+  if (errorCard) slot.append(errorCard);
   return slot;
 }
 
@@ -189,7 +222,8 @@ function updateProgressDisplay() {
   const slot = document.querySelector('.meeting-progress-slot');
   if (!slot || !meetingState) return;
   const card = progressCard(meetingState.progress || {});
-  slot.replaceChildren(...(card ? [card] : []));
+  const errorCard = refreshErrorCard();
+  slot.replaceChildren(...(card ? [card] : []), ...(errorCard ? [errorCard] : []));
 }
 
 function setOperationButtons(disabled) {
@@ -199,7 +233,13 @@ function setOperationButtons(disabled) {
 async function refreshMeeting() {
   const request = progressRequest;
   const [meeting, summary] = await Promise.all([api.readMeeting(meetingState.path), api.readSummaryJson(meetingState.path)]);
-  if (request !== progressRequest || !meetingState || meeting.error) return;
+  if (request !== progressRequest || !meetingState) return;
+  if (meeting.error) {
+    meetingState.refreshError = 'Could not refresh this meeting: ' + meeting.error;
+    updateProgressDisplay();
+    return;
+  }
+  meetingState.refreshError = null;
   meetingState.segments = meeting.segments || [];
   meetingState.meeting = meeting;
   meetingState.summary = summary.error || !hasSummary(summary) ? null : summary;
@@ -389,7 +429,7 @@ function renderEditor() {
   Object.entries(brief.sections).forEach(([key, enabled]) => {
     const checkbox = el('input', {type: 'checkbox', checked: enabled});
     checkbox.dataset.section = key;
-    sections.append(el('label', {className: 'setting-toggle'}, [checkbox, el('span', {textContent: key.replaceAll('_', ' ')})]));
+    sections.append(el('label', {className: 'setting-toggle'}, [checkbox, el('span', {textContent: SECTION_LABELS[key] || key.replaceAll('_', ' ')})]));
   });
   const regenerateAnalysis = el('button', {className: 'small primary', type: 'button', textContent: meetingState.summary ? 'Regenerate AI analysis' : 'Generate AI analysis'});
   regenerateAnalysis.disabled = !meetingState.segments.length;
@@ -476,15 +516,23 @@ function renderCurrentMode() {
   if (editing) renderEditor(); else renderView();
 }
 
+// Where the work ran, by backend id. Meetings recorded before the rename
+// stored the old prose ("Pracovní Spark") in `where`; deriving the name here
+// keeps every meeting, old or new, on today's wording.
+const ENGINE_NAMES = {spark: 'Remote engine', local: 'On this computer'};
+
 function renderMeta(meeting) {
   const asr = meeting.asr || {};
   const diar = meeting.diarization || {};
   const parts = [];
-  const where = asr.where || (meeting.backend === 'spark' ? 'Remote Spark' : meeting.backend ? 'Locally' : null);
+  const where = ENGINE_NAMES[asr.backend || meeting.backend] || null;
   if (where) parts.push(`Transcription: ${where}${asr.model ? ` — ${asr.model}` : ''}`);
   if (diar.applied) parts.push(`Speakers: ${diar.model || 'recognized'}`);
   if (meeting.language) parts.push(`Language: ${meeting.language}`);
-  if (meeting.duration) parts.push(`Duration: ${Math.round(meeting.duration / 60)} min`);
+  if (meeting.duration) {
+    const minutes = Math.round(meeting.duration / 60);
+    parts.push(`Duration: ${minutes >= 1 ? `${minutes} min` : `${Math.round(meeting.duration)} s`}`);
+  }
   $('meeting-meta').textContent = parts.join(' · ');
 }
 
@@ -501,7 +549,13 @@ export async function openMeeting(path, wavPath, title) {
   audio.src = wavPath ? api.audioUrl(wavPath) : '';
   audio.ontimeupdate = () => highlightActive(audio);
   const [meeting, summary] = await Promise.all([api.readMeeting(path), api.readSummaryJson(path)]);
-  if (meeting.error) return;
+  if (meeting.error) {
+    forgetRecentPath(path);
+    window.dispatchEvent(new Event('transcriber:library-changed'));
+    alert('This meeting could not be opened: ' + meeting.error);
+    location.hash = '#archive';
+    return;
+  }
   meetingState = {path, wavPath, audio, meeting, segments: meeting.segments || [], summary: summary.error || !hasSummary(summary) ? null : summary, mode: 'view', progress: {}};
   renderMeta(meeting);
   $('meeting-rename').onclick = () => {
@@ -522,8 +576,15 @@ export function closeMeeting() {
   $('meeting-audio').removeAttribute('src');
   $('meeting-artifact-dialog').close();
   meetingState = null;
+  $('meeting-body').replaceChildren();
 }
 
 $('meeting-back').onclick = () => { location.hash = '#archive'; };
 $('meeting-artifact-close').onclick = () => $('meeting-artifact-dialog').close();
-document.addEventListener('keydown', event => { if (event.key === 'Escape' && location.hash === '#meeting') location.hash = '#archive'; });
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Escape' || location.hash !== '#meeting') return;
+  if (document.querySelector('dialog[open]')) return;
+  const target = event.target;
+  if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
+  location.hash = '#archive';
+});

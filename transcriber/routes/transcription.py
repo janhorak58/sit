@@ -41,3 +41,10 @@ def diarize(req: DiarizeReq):
 @router.get("/progress")
 def get_progress():
     return progress.snapshot()
+
+
+@router.post("/progress/cancel")
+def cancel_progress():
+    """Force a wedged transcribe/diarize/analyze job back to idle."""
+    progress.cancel()
+    return {"ok": True}

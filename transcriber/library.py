@@ -6,6 +6,7 @@ Layout: transcripts live at ``<folder>/<name>.txt``, audio at
 
 from datetime import datetime
 import json
+import os
 from pathlib import Path
 import shutil
 
@@ -18,6 +19,15 @@ from .paths import (
     sanitize_component,
     valid_component,
 )
+
+
+def atomic_write_text(path, text):
+    """Write ``text`` to ``path`` without ever leaving a half-written file:
+    a reader (or a crash) between open() and the full write would otherwise
+    see truncated JSON. Write to a sibling temp file, then rename in place."""
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
 
 
 def browse(rel_folder):
@@ -136,6 +146,16 @@ def meeting_json_path_for(txt_path):
     return txt_path.with_name(f"{txt_path.stem}.meeting.json")
 
 
+def _read_json_sidecar(path):
+    """A truncated/corrupt sidecar must not permanently 500 a meeting."""
+    try:
+        return json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+        raise AppError(
+            "This meeting's saved data could not be read. It may be damaged."
+        ) from exc
+
+
 def read_meeting(path):
     """Structured segments for a transcript, or ``{"segments": None}`` if absent."""
     txt_path = resolve_in_data(path)
@@ -144,7 +164,7 @@ def read_meeting(path):
     meeting_path = meeting_json_path_for(txt_path)
     if not meeting_path.is_file():
         return {"segments": None}
-    return json.loads(meeting_path.read_text())
+    return _read_json_sidecar(meeting_path)
 
 
 def read_summary_json(path):
@@ -154,7 +174,7 @@ def read_summary_json(path):
         raise AppError("invalid path")
     summary_path = txt_path.with_name(f"{txt_path.stem}.summary.json")
     if summary_path.is_file():
-        return json.loads(summary_path.read_text())
+        return _read_json_sidecar(summary_path)
     markdown_path = txt_path.with_name(f"{txt_path.stem}.summary.md")
     if markdown_path.is_file():
         return {"markdown": markdown_path.read_text()}
@@ -188,7 +208,7 @@ def update_transcript(path, edits):
     meeting_path = meeting_json_path_for(txt_path)
     if not meeting_path.is_file():
         raise AppError("Segments are not available.")
-    data = json.loads(meeting_path.read_text())
+    data = _read_json_sidecar(meeting_path)
     segments = data.get("segments") or []
     if len(edits) != len(segments):
         raise AppError("Transcript changed elsewhere. Reload before saving.")
@@ -201,7 +221,7 @@ def update_transcript(path, edits):
         segment["speaker"] = speaker or None
     data["segments"] = segments
     data["analysis_stale"] = True
-    meeting_path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    atomic_write_text(meeting_path, json.dumps(data, ensure_ascii=False, indent=2))
     txt_path.write_text(_render_segments_text(segments))
     return {"segments": segments}
 
@@ -217,7 +237,7 @@ def rename_speakers(path, names):
     mapping = {old: new.strip() for old, new in names.items() if new and new.strip()}
     if not mapping:
         raise AppError("No speaker names were provided.")
-    data = json.loads(meeting_path.read_text())
+    data = _read_json_sidecar(meeting_path)
     segments = data.get("segments") or []
     renamed = 0
     for segment in segments:
@@ -229,7 +249,7 @@ def rename_speakers(path, names):
         data["segments"] = segments
         # The stored analysis quotes the old labels, so it is now out of date.
         data["analysis_stale"] = True
-        meeting_path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+        atomic_write_text(meeting_path, json.dumps(data, ensure_ascii=False, indent=2))
         txt_path.write_text(_render_segments_text(segments))
     return {"segments": segments, "renamed": renamed}
 

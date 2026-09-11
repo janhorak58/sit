@@ -6,7 +6,7 @@ export const getPreferences = () => current;
 const LOCAL_KEY = 'sit.customizations';
 const FALLBACK = {
   profile: 'meeting',
-  recording: {default_project: '', language: 'cs', microphone: '', live_enabled: false, live_chunk_seconds: '10', speaker_count: '', auto_diarize: true},
+  recording: {default_project: '', language: 'cs', microphone: '', output: '', live_enabled: false, live_chunk_seconds: '10', speaker_count: '', auto_diarize: true},
   transcript: {show_timestamps: true, show_speakers: true, paragraph_size: 'normal', default_view: 'both'},
   brief: {detail: 'standard', language: 'same', compare_previous: true, user_prompt: '', sections: {chapters: true, decisions: true, action_items: true, open_questions: true, risks: true, speaker_contributions: true, follow_up: true}},
   privacy: {processing: 'auto', clear_live_drafts: true},
@@ -58,26 +58,35 @@ function applyProfile() {
   $('custom-compare').checked = profile.compare;
 }
 
-function fillMicrophones(result, selected = '') {
-  const select = $('custom-microphone');
-  select.replaceChildren(new Option('System default', ''));
-  (result.microphones || []).forEach(device => {
-    const label = device.note ? device.label + ' — ' + device.note
-      : device.needs_profile ? device.label + ' — needs headset mode (switched automatically)'
-      : device.label + (device.default ? ' — system default' : '');
-    const option = new Option(label, device.id);
+function fillDevices(select, devices, placeholder, selected, label) {
+  select.replaceChildren(new Option(placeholder, ''));
+  devices.forEach(device => {
+    const option = new Option(label(device), device.id);
     option.disabled = device.available === false;
     select.append(option);
   });
   if (selected && ![...select.options].some(option => option.value === selected)) {
-    select.append(new Option('Previously selected microphone (not connected)', selected));
+    select.append(new Option('Previously selected device (not connected)', selected));
   }
+}
+
+function fillCaptureDevices(result, recording = {}) {
+  fillDevices($('custom-microphone'), result.microphones || [], 'System default',
+    recording.microphone || '',
+    // The note is the Bluetooth quality warning or the reason it cannot record.
+    device => (device.note ? device.label + ' — ' + device.note
+      : device.label + (device.default ? ' — system default' : '')));
+  fillDevices($('custom-output'), result.outputs || [], 'Default output',
+    recording.output || '',
+    device => device.label + (device.default ? ' — system default' : ''));
 }
 
 export async function loadCustomizations() {
   const [result, devices] = await Promise.all([api.preferences(), api.recordingDevices()]);
   current = result.error ? localPreferences() : result;
-  fillMicrophones(devices.error ? {} : devices, current.recording.microphone);
+  $('custom-device-error').hidden = !devices.error;
+  $('custom-device-error').textContent = devices.error ? 'Could not list audio devices: ' + devices.error : '';
+  fillCaptureDevices(devices.error ? {} : devices, current.recording);
   fillForm(current);
   $('customization-status').textContent = result.error ? 'Saved locally until the backend is restarted.' : '';
   window.dispatchEvent(new CustomEvent('transcriber:preferences-changed', {detail: current}));

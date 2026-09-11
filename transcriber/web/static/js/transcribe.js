@@ -7,7 +7,7 @@ let pollTimer = null;
 
 function setBusy(busy) {
   $('transcribe').disabled = busy;
-  $('bar').style.display = 'block';
+  $('bar').style.display = busy ? 'block' : 'none';
 }
 
 export function watchProgress(onDone) {

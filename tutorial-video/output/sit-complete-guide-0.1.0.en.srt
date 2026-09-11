@@ -1,0 +1,730 @@
+1
+00:00:00,000 --> 00:00:05,093
+Welcome to the complete S I T setup and user guide.
+
+2
+00:00:05,093 --> 00:00:08,334
+S I T means Smart Interactive Transcriber.
+
+3
+00:00:08,334 --> 00:00:14,816
+It keeps recordings, speaker-labelled transcripts, and structured
+meeting analysis together in one local library.
+
+4
+00:00:14,816 --> 00:00:21,761
+This guide uses the current zero point one point zero alpha release on
+Arch Linux.
+
+5
+00:00:21,761 --> 00:00:35,651
+We will install the application, configure its managed SSH connections,
+record and upload audio, generate a transcript with remote Spark
+services, review speakers, create AI analysis, and manage the library.
+
+6
+00:00:35,651 --> 00:00:39,355
+The model services themselves are outside this guide.
+
+7
+00:00:39,355 --> 00:00:46,300
+Working remote endpoints are assumed, and this demonstration will not
+use the local transcription fallback.
+
+8
+00:00:46,800 --> 00:00:56,876
+S I T has a FastAPI backend and the same web interface in a normal
+browser or a native Tauri window.
+
+9
+00:00:56,876 --> 00:01:05,513
+On supported Linux audio systems, the recorder captures the microphone
+and the selected output monitor as separate channels.
+
+10
+00:01:05,513 --> 00:01:11,751
+Each channel is transcribed independently, which protects clean system
+audio from room echo.
+
+11
+00:01:11,751 --> 00:01:16,070
+Remote speech recognition and speaker recognition use Spark-compatible
+services.
+
+12
+00:01:16,070 --> 00:01:19,429
+AI analysis uses a separate OpenAI-compatible endpoint.
+
+13
+00:01:19,429 --> 00:01:26,626
+The application is verified end to end on Arch Linux with PipeWire Pulse
+or PulseAudio.
+
+14
+00:01:26,626 --> 00:01:34,303
+Fedora, Ubuntu, Debian, and WSL two are documented, but not yet verified
+to the same level.
+
+15
+00:01:34,303 --> 00:01:40,061
+WSL users should expect recording limitations and can always use file
+upload.
+
+16
+00:01:40,061 --> 00:01:43,900
+Native Windows and macOS are not currently supported.
+
+17
+00:01:44,400 --> 00:01:46,389
+Start with system packages.
+
+18
+00:01:46,389 --> 00:01:51,858
+On Arch Linux, install Git, curl, Python, uv, FFmpeg, and libpulse.
+
+19
+00:01:51,858 --> 00:01:58,322
+Libpulse supplies the pactl client used to discover microphones,
+outputs, and monitor sources.
+
+20
+00:01:58,322 --> 00:02:08,267
+Keep the PipeWire Pulse or PulseAudio server already provided by your
+desktop; do not replace it for S I T.
+
+21
+00:02:08,267 --> 00:02:14,233
+If you only want the browser interface, the first command is enough.
+
+22
+00:02:14,233 --> 00:02:24,675
+For the native window, also install the compiler toolchain, WebKit GTK,
+OpenSSL, the application indicator and SVG libraries, xdotool, and
+rustup.
+
+23
+00:02:24,675 --> 00:02:27,658
+Then select the stable Rust toolchain.
+
+24
+00:02:27,658 --> 00:02:33,128
+Fedora and Ubuntu use equivalent packages listed in the project readme.
+
+25
+00:02:33,128 --> 00:02:38,597
+Use Python three point twelve when possible, or three point eleven.
+
+26
+00:02:38,597 --> 00:02:44,067
+Newer rolling-release Python versions may not have every machine-
+learning wheel available.
+
+27
+00:02:44,567 --> 00:02:53,293
+Clone the repository, enter the checkout, and create a dedicated Python
+three point twelve environment named dot venv.
+
+28
+00:02:53,293 --> 00:02:56,687
+Install requirements dot txt into that environment.
+
+29
+00:02:56,687 --> 00:03:02,020
+This is the recommended remote-processing profile and keeps the
+environment small.
+
+30
+00:03:02,020 --> 00:03:14,626
+It includes the application and the CPU ONNX transcription package, but
+this tutorial will use the configured remote services and will not
+demonstrate local fallback processing.
+
+31
+00:03:14,626 --> 00:03:18,504
+The optional local Pyannote installation is intentionally omitted.
+
+32
+00:03:18,504 --> 00:03:22,383
+Installing from the private repository requires GitHub access.
+
+33
+00:03:22,383 --> 00:03:31,594
+The first model download, if local processing is ever enabled later,
+also requires network access and additional disk space.
+
+34
+00:03:31,594 --> 00:03:38,867
+Keep the checkout after installation because the desktop launcher points
+to absolute paths inside it.
+
+35
+00:03:39,367 --> 00:03:45,710
+For the browser version, run the transcriber module and open the local
+address shown here.
+
+36
+00:03:45,710 --> 00:03:49,516
+The backend remains active until you press Control C.
+
+37
+00:03:49,516 --> 00:03:55,437
+For the native window, build the Tauri release binary and run the
+desktop installer.
+
+38
+00:03:55,437 --> 00:03:57,974
+The installer needs no sudo access.
+
+39
+00:03:57,974 --> 00:04:04,318
+It creates a launcher in your local bin directory, a desktop entry, and
+an icon.
+
+40
+00:04:04,318 --> 00:04:08,124
+S I T then appears in the application menu.
+
+41
+00:04:08,124 --> 00:04:14,890
+The native launcher can reuse an existing backend or start one directly;
+systemd is not required.
+
+42
+00:04:14,890 --> 00:04:24,194
+Closing a native window also stops a backend that the window started, so
+wait for recordings and processing jobs to finish first.
+
+43
+00:04:24,194 --> 00:04:27,154
+A manually started backend keeps running independently.
+
+44
+00:04:27,154 --> 00:04:34,767
+The default library is stored below your X D G data directory, normally
+dot local share slash sit.
+
+45
+00:04:35,267 --> 00:04:38,017
+Open Connections from the left sidebar.
+
+46
+00:04:38,017 --> 00:04:41,683
+Enable Reach the AI services through SSH tunnels.
+
+47
+00:04:41,683 --> 00:04:44,892
+Enter the shared SSH host and user.
+
+48
+00:04:44,892 --> 00:04:47,183
+Port twenty-two is normally correct.
+
+49
+00:04:47,183 --> 00:04:55,433
+Leave SSH key empty to use your SSH agent, your normal SSH config, or
+the default identity files.
+
+50
+00:04:55,433 --> 00:04:59,100
+Otherwise enter the path to a private key.
+
+51
+00:04:59,100 --> 00:05:02,767
+S I T never stores an SSH password.
+
+52
+00:05:02,767 --> 00:05:07,350
+Test SSH connection checks only login and port forwarding permission.
+
+53
+00:05:07,350 --> 00:05:15,600
+A green signed-in result proves that SSH works, but it does not yet
+start all persistent service tunnels.
+
+54
+00:05:15,600 --> 00:05:25,225
+The application stores connection settings per user in dot local share
+slash sit slash dot connections dot json with owner-only permissions.
+
+55
+00:05:25,225 --> 00:05:32,100
+For the video, the real hosts and username are redacted; the connection
+result is genuine.
+
+56
+00:05:32,600 --> 00:05:36,859
+Each service has a local port and a remote port.
+
+57
+00:05:36,859 --> 00:05:40,266
+The local port is opened on this computer.
+
+58
+00:05:40,266 --> 00:05:45,377
+The remote port is where the service listens on the remote machine.
+
+59
+00:05:45,377 --> 00:05:47,933
+Every local port must be unique.
+
+60
+00:05:47,933 --> 00:05:53,470
+In this setup, transcription uses local and remote port eight two zero
+eight.
+
+61
+00:05:53,470 --> 00:05:56,877
+Pyannote speaker recognition uses eight two nine nine.
+
+62
+00:05:56,877 --> 00:06:01,988
+The analysis service uses local and remote port eight one zero zero.
+
+63
+00:06:01,988 --> 00:06:07,525
+Its Advanced section overrides the SSH host because it runs on another
+machine.
+
+64
+00:06:07,525 --> 00:06:12,210
+The model field must match a model exposed by that server.
+
+65
+00:06:12,210 --> 00:06:22,432
+The transcription API path is slash v one slash audio slash
+transcriptions, and the diarization path is slash v one slash audio
+slash diarizations.
+
+66
+00:06:22,432 --> 00:06:32,227
+Advanced settings also support a different remote bind address, API
+path, per-service SSH host, or a direct HTTP address when tunnels are
+disabled.
+
+67
+00:06:32,227 --> 00:06:41,172
+The Hugging Face token is only needed by the optional local Pyannote
+fallback, so a remote-only deployment can leave it unused.
+
+68
+00:06:41,172 --> 00:06:49,690
+Press Set up and test on one service to save the complete form, restart
+the tunnels, and test that service.
+
+69
+00:06:49,690 --> 00:06:55,653
+Press the main Set up and test button at the bottom to test everything.
+
+70
+00:06:55,653 --> 00:07:08,004
+A healthy remote setup reports that the one-second transcription upload
+was accepted, Pyannote is running on CUDA, and the configured G P T O S
+S model is reachable.
+
+71
+00:07:08,004 --> 00:07:13,967
+The diagnostics section also shows tunnel ownership, resolved endpoints,
+model names, and actionable errors.
+
+72
+00:07:14,467 --> 00:07:18,515
+Open Customization before the first real meeting.
+
+73
+00:07:18,515 --> 00:07:27,189
+Choose a profile for meetings, interviews, lectures, or personal notes,
+then adjust every default independently.
+
+74
+00:07:27,189 --> 00:07:35,863
+Select the usual project, microphone, output monitor, recording
+language, live-preview cadence, and expected speaker count.
+
+75
+00:07:35,863 --> 00:07:39,332
+One expected speaker skips speaker separation.
+
+76
+00:07:39,332 --> 00:07:45,693
+Decide whether live transcription and automatic speaker recognition
+start by default.
+
+77
+00:07:45,693 --> 00:07:53,211
+Reading preferences control the initial transcript view, paragraph
+grouping, timestamps, and speaker labels.
+
+78
+00:07:53,211 --> 00:08:01,885
+AI analysis defaults control detail, language, comparison with recent
+meetings, and the sections to request.
+
+79
+00:08:01,885 --> 00:08:06,511
+Privacy preferences choose automatic, local-preferred, or remote-
+preferred processing.
+
+80
+00:08:06,511 --> 00:08:10,559
+For this remote-only workflow, choose remote processing.
+
+81
+00:08:10,559 --> 00:08:19,233
+Save customizations; they apply to new recordings and newly generated
+analyses without changing existing results.
+
+82
+00:08:19,733 --> 00:08:21,072
+Choose New recording.
+
+83
+00:08:21,072 --> 00:08:28,214
+Select an existing project or create a new one, then give the meeting a
+descriptive name.
+
+84
+00:08:28,214 --> 00:08:32,232
+The preview shows the folder that will be created.
+
+85
+00:08:32,232 --> 00:08:36,695
+Continue to the three-step workspace: Capture, Transcript, and AI
+analysis.
+
+86
+00:08:36,695 --> 00:08:46,069
+In Capture, choose the spoken language, the microphone for the room
+track, and the output whose monitor should supply system audio.
+
+87
+00:08:46,069 --> 00:08:48,747
+Pick the output you actually hear.
+
+88
+00:08:48,747 --> 00:08:58,567
+A Bluetooth headset microphone may force the headset into a lower-
+quality capture profile, so a wired or built-in microphone is often
+clearer.
+
+89
+00:08:58,567 --> 00:09:03,923
+Enable Live transcript while recording only when a running preview is
+useful.
+
+90
+00:09:03,923 --> 00:09:08,833
+The final saved recording is transcribed again regardless of that
+toggle.
+
+91
+00:09:09,333 --> 00:09:10,662
+Press Start recording.
+
+92
+00:09:10,662 --> 00:09:17,750
+The workspace replaces its setup cards with a timer, waveform, recording
+controls, and the live transcript.
+
+93
+00:09:17,750 --> 00:09:22,623
+The level meter reflects the audio actually reaching S I T.
+
+94
+00:09:22,623 --> 00:09:29,711
+If it remains silent for several seconds, the interface tells you to
+check the selected microphone.
+
+95
+00:09:29,711 --> 00:09:37,242
+The first live text normally appears after about ten seconds of captured
+audio plus model processing time.
+
+96
+00:09:37,242 --> 00:09:42,114
+Later updates add new audio while retaining a short context window.
+
+97
+00:09:42,114 --> 00:09:46,101
+The newest provisional segment is highlighted and may change.
+
+98
+00:09:46,101 --> 00:09:53,189
+If processing falls behind, the status shows the delay; slow processing
+does not intentionally skip segments.
+
+99
+00:09:53,189 --> 00:09:56,733
+Cancel discards the temporary audio and live preview.
+
+100
+00:09:56,733 --> 00:10:03,378
+Stop and save moves the recording into the library and starts the
+complete transcription workflow.
+
+101
+00:10:03,378 --> 00:10:08,694
+If the recording reaches its time limit, it remains available to save.
+
+102
+00:10:08,694 --> 00:10:13,567
+Do not close the backend while saving or processing is active.
+
+103
+00:10:14,067 --> 00:10:19,752
+To process an existing file, choose Upload existing audio instead of
+recording.
+
+104
+00:10:19,752 --> 00:10:30,649
+S I T accepts common audio formats and video, then uses FFmpeg to
+normalize the source into a library W A V file.
+
+105
+00:10:30,649 --> 00:10:35,387
+Upload works even when the host has no PulseAudio recorder.
+
+106
+00:10:35,387 --> 00:10:39,177
+After capture or upload, open the Transcript step.
+
+107
+00:10:39,177 --> 00:10:42,967
+Confirm the language and expected number of speakers.
+
+108
+00:10:42,967 --> 00:10:49,600
+Leave the count empty for automatic detection, or use one to skip
+speaker recognition.
+
+109
+00:10:49,600 --> 00:10:54,811
+Generate transcript sends the audio to the configured remote
+transcription endpoint.
+
+110
+00:10:54,811 --> 00:11:00,497
+When speaker recognition is enabled, the diarizer labels the timed
+segments afterward.
+
+111
+00:11:00,497 --> 00:11:06,182
+The progress view reports transcription, diarization, merging,
+completion, or a real error.
+
+112
+00:11:06,182 --> 00:11:13,762
+In this demonstration, both operations use the working Spark tunnels;
+the local model is not used.
+
+113
+00:11:13,762 --> 00:11:18,500
+You can rerun speaker recognition later without repeating speech
+recognition.
+
+114
+00:11:19,000 --> 00:11:22,989
+Open the finished meeting to review timed transcript cues.
+
+115
+00:11:22,989 --> 00:11:27,421
+Selecting a timestamp seeks the audio player to that moment.
+
+116
+00:11:27,421 --> 00:11:31,410
+Choose Edit meeting to correct individual words or labels.
+
+117
+00:11:31,410 --> 00:11:35,842
+Every cue must retain text before it can be saved.
+
+118
+00:11:35,842 --> 00:11:41,603
+Transcript edits mark any existing AI analysis as outdated because the
+source changed.
+
+119
+00:11:41,603 --> 00:11:49,581
+The Speakers tab groups detected labels and lets you replace them with
+real names across the whole transcript.
+
+120
+00:11:49,581 --> 00:11:53,570
+Save speaker names once, rather than editing every cue.
+
+121
+00:11:53,570 --> 00:11:59,774
+If separation was incorrect, enter an expected speaker count and choose
+Recognize speakers again.
+
+122
+00:11:59,774 --> 00:12:04,206
+This replaces speaker labels but keeps the existing speech-recognition
+text.
+
+123
+00:12:04,206 --> 00:12:14,400
+The Transcript tab can regenerate everything with a different language
+or speaker count, but that operation replaces the current transcript and
+derived analysis.
+
+124
+00:12:14,900 --> 00:12:19,089
+Continue to AI analysis after the transcript is ready.
+
+125
+00:12:19,089 --> 00:12:28,863
+Use the saved defaults or expand Adjust this analysis to change detail,
+output language, instructions, and requested sections for this meeting.
+
+126
+00:12:28,863 --> 00:12:37,706
+The available structured sections include a timeline, decisions, action
+items, open questions, risks, speaker contributions, and a follow-up
+draft.
+
+127
+00:12:37,706 --> 00:12:43,291
+Generate AI analysis runs in the background against the configured
+OpenAI-compatible service.
+
+128
+00:12:43,291 --> 00:12:46,549
+There is no built-in local analysis fallback.
+
+129
+00:12:46,549 --> 00:12:55,393
+The finished brief links important claims back to source timestamps, so
+selecting a source jumps to the relevant audio.
+
+130
+00:12:55,393 --> 00:13:05,167
+If you edit the transcript afterward, S I T preserves the previous
+analysis but marks it outdated until you regenerate it.
+
+131
+00:13:05,667 --> 00:13:09,146
+The Library groups meetings below project folders.
+
+132
+00:13:09,146 --> 00:13:17,596
+Search the current folder, create subfolders, and use each item menu to
+move, rename, or delete content.
+
+133
+00:13:17,596 --> 00:13:26,047
+A meeting can contain audio, plain transcript text, structured timed
+segments, Markdown analysis, and structured analysis data.
+
+134
+00:13:26,047 --> 00:13:32,011
+Opening a finished meeting restores its audio player, provenance,
+transcript, and analysis.
+
+135
+00:13:32,011 --> 00:13:39,964
+Open on disk requires the optional transcriber opener helper; every
+other library feature works without it.
+
+136
+00:13:39,964 --> 00:13:43,941
+You can always open the data directory manually.
+
+137
+00:13:43,941 --> 00:13:50,900
+Keep backups because this is alpha software and the on-disk layout may
+still change.
+
+138
+00:13:51,400 --> 00:13:56,339
+By default, the library lives at dot local share slash sit.
+
+139
+00:13:56,339 --> 00:14:07,564
+Transcripts use dot txt files, timed data uses dot meeting dot json,
+recordings live in an audio subfolder, and analyses use Markdown and
+JSON sidecars.
+
+140
+00:14:07,564 --> 00:14:10,258
+Temporary work stays under underscore scratch.
+
+141
+00:14:10,258 --> 00:14:20,585
+When remote processing is enabled, audio is sent to the transcription
+and diarization servers, and transcript text is sent to the analysis
+server.
+
+142
+00:14:20,585 --> 00:14:23,728
+Use only infrastructure appropriate for that data.
+
+143
+00:14:23,728 --> 00:14:29,565
+Connection secrets stay server-side; the Hugging Face token is write-
+only in the browser.
+
+144
+00:14:29,565 --> 00:14:35,851
+The FastAPI service has no authentication and intentionally binds to
+local host by default.
+
+145
+00:14:35,851 --> 00:14:38,096
+Do not expose it publicly.
+
+146
+00:14:38,096 --> 00:14:47,076
+For recording failures, verify that pactl info can see the desktop audio
+server and that FFmpeg and pactl are installed.
+
+147
+00:14:47,076 --> 00:14:51,117
+For connection failures, test SSH first, then each service.
+
+148
+00:14:51,117 --> 00:14:55,607
+Connection refused usually means the tunnel or service is absent.
+
+149
+00:14:55,607 --> 00:14:58,750
+A four-oh-four points to the API path.
+
+150
+00:14:58,750 --> 00:15:04,138
+A model error means the configured model does not match the server.
+
+151
+00:15:04,138 --> 00:15:13,567
+If a local port is occupied, close the process that owns the old tunnel
+or assign a different unique local port.
+
+152
+00:15:14,067 --> 00:15:20,435
+To update, close S I T and run update dot sh from the checkout.
+
+153
+00:15:20,435 --> 00:15:30,443
+It performs a fast-forward pull, refreshes Python dependencies, rebuilds
+the native application when Tauri sources changed, and updates an
+installed desktop entry.
+
+154
+00:15:30,443 --> 00:15:34,536
+Settings, the environment, and library data remain in place.
+
+155
+00:15:34,536 --> 00:15:42,270
+The script refuses to update while the backend is running and refuses to
+pull across uncommitted changes.
+
+156
+00:15:42,270 --> 00:15:54,551
+Use dash dash no pull when you deliberately want to reinstall the
+current working tree, and dash dash force build when the native binary
+must be rebuilt.
+
+157
+00:15:54,551 --> 00:16:06,833
+You now have a remote-only S I T installation with managed SSH tunnels,
+recording and upload workflows, speaker-aware transcripts, structured AI
+analysis, and a maintainable local library.

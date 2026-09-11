@@ -22,10 +22,17 @@ async function viewItem(item) {
   await openMeeting(path, item.wav_path, item.name);
 }
 
+export function forgetRecentPath(path) {
+  let recent = [];
+  try { recent = JSON.parse(localStorage.getItem(RECENT_KEY)) || []; } catch {}
+  localStorage.setItem(RECENT_KEY, JSON.stringify(recent.filter(entry => entry.path !== path && entry.wavPath !== path)));
+}
+
 async function deletePath(path, label) {
   if (!confirm('Really delete ' + label + '?')) return;
   const result = await api.remove(path);
   if (result.error) { alert('Error: ' + result.error); return; }
+  forgetRecentPath(path);
   loadLibrary();
   window.dispatchEvent(new Event('transcriber:library-changed'));
 }
@@ -234,13 +241,20 @@ export async function loadLibrary() {
 }
 
 export async function loadDashboard() {
-  const {projects = []} = await api.projects();
+  const result = await api.projects();
   const projectWrap = $('dashboard-projects');
   projectWrap.replaceChildren();
-  if (!projects.length) {
+  if (result.error) {
+    const retry = el('button', {className: 'small quiet', type: 'button', textContent: 'Retry'});
+    retry.onclick = () => loadDashboard();
+    projectWrap.appendChild(el('div', {className: 'list-error'}, [
+      el('p', {textContent: 'Could not load your projects: ' + result.error}),
+      retry,
+    ]));
+  } else if (!result.projects?.length) {
     projectWrap.appendChild(el('a', {className: 'empty-project', href: '#new', textContent: 'No projects yet — create your first meeting →'}));
   } else {
-    projects.forEach(name => {
+    result.projects.forEach(name => {
       const button = el('button', {className: 'project-card', type: 'button'}, [
         el('span', {textContent: name.slice(0, 2).toUpperCase()}),
         el('div', {}, [el('b', {textContent: name}), el('small', {textContent: 'Open project'})]),

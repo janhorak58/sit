@@ -1,0 +1,122 @@
+1
+00:00:00,000 --> 00:00:02,750
+Open Connections from the left sidebar.
+
+2
+00:00:02,750 --> 00:00:06,417
+Enable Reach the AI services through SSH tunnels.
+
+3
+00:00:06,417 --> 00:00:09,625
+Enter the shared SSH host and user.
+
+4
+00:00:09,625 --> 00:00:11,917
+Port twenty-two is normally correct.
+
+5
+00:00:11,917 --> 00:00:20,167
+Leave SSH key empty to use your SSH agent, your normal SSH config, or
+the default identity files.
+
+6
+00:00:20,167 --> 00:00:23,833
+Otherwise enter the path to a private key.
+
+7
+00:00:23,833 --> 00:00:27,500
+S I T never stores an SSH password.
+
+8
+00:00:27,500 --> 00:00:32,083
+Test SSH connection checks only login and port forwarding permission.
+
+9
+00:00:32,083 --> 00:00:40,333
+A green signed-in result proves that SSH works, but it does not yet
+start all persistent service tunnels.
+
+10
+00:00:40,333 --> 00:00:49,958
+The application stores connection settings per user in dot local share
+slash sit slash dot connections dot json with owner-only permissions.
+
+11
+00:00:49,958 --> 00:00:56,833
+For the video, the real hosts and username are redacted; the connection
+result is genuine.
+
+12
+00:00:57,333 --> 00:01:01,592
+Each service has a local port and a remote port.
+
+13
+00:01:01,592 --> 00:01:05,000
+The local port is opened on this computer.
+
+14
+00:01:05,000 --> 00:01:10,111
+The remote port is where the service listens on the remote machine.
+
+15
+00:01:10,111 --> 00:01:12,666
+Every local port must be unique.
+
+16
+00:01:12,666 --> 00:01:18,203
+In this setup, transcription uses local and remote port eight two zero
+eight.
+
+17
+00:01:18,203 --> 00:01:21,610
+Pyannote speaker recognition uses eight two nine nine.
+
+18
+00:01:21,610 --> 00:01:26,721
+The analysis service uses local and remote port eight one zero zero.
+
+19
+00:01:26,721 --> 00:01:32,258
+Its Advanced section overrides the SSH host because it runs on another
+machine.
+
+20
+00:01:32,258 --> 00:01:36,943
+The model field must match a model exposed by that server.
+
+21
+00:01:36,943 --> 00:01:47,165
+The transcription API path is slash v one slash audio slash
+transcriptions, and the diarization path is slash v one slash audio
+slash diarizations.
+
+22
+00:01:47,165 --> 00:01:56,961
+Advanced settings also support a different remote bind address, API
+path, per-service SSH host, or a direct HTTP address when tunnels are
+disabled.
+
+23
+00:01:56,961 --> 00:02:05,905
+The Hugging Face token is only needed by the optional local Pyannote
+fallback, so a remote-only deployment can leave it unused.
+
+24
+00:02:05,905 --> 00:02:14,423
+Press Set up and test on one service to save the complete form, restart
+the tunnels, and test that service.
+
+25
+00:02:14,423 --> 00:02:20,386
+Press the main Set up and test button at the bottom to test everything.
+
+26
+00:02:20,386 --> 00:02:32,737
+A healthy remote setup reports that the one-second transcription upload
+was accepted, Pyannote is running on CUDA, and the configured G P T O S
+S model is reachable.
+
+27
+00:02:32,737 --> 00:02:38,700
+The diagnostics section also shows tunnel ownership, resolved endpoints,
+model names, and actionable errors.

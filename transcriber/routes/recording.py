@@ -7,7 +7,7 @@ from ..errors import AppError
 from ..library import store_recording
 from ..live import live
 from ..paths import rel_to_data
-from ..recorder import capture_levels, microphones, recorder
+from ..recorder import capture_levels, microphones, outputs, recorder
 from ..schemas import StartReq, StopReq
 
 router = APIRouter()
@@ -21,13 +21,13 @@ recorder.on_stop = live.stop_listening
 
 @router.get("/recording/devices")
 def devices():
-    return {"microphones": microphones()}
+    return {"microphones": microphones(), "outputs": outputs()}
 
 
 @router.post("/start")
 def start(req: StartReq | None = None):
     with _lifecycle_lock:
-        recorder.start(req.microphone if req else "")
+        recorder.start(req.microphone if req else "", req.output if req else "")
         live.start(
             recorder.wav_path, (req.language if req else "cs") or "",
             enabled=req.live if req else True,

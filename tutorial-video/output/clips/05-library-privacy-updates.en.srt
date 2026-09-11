@@ -1,0 +1,174 @@
+1
+00:00:00,000 --> 00:00:04,048
+Open Customization before the first real meeting.
+
+2
+00:00:04,048 --> 00:00:12,722
+Choose a profile for meetings, interviews, lectures, or personal notes,
+then adjust every default independently.
+
+3
+00:00:12,722 --> 00:00:21,396
+Select the usual project, microphone, output monitor, recording
+language, live-preview cadence, and expected speaker count.
+
+4
+00:00:21,396 --> 00:00:24,866
+One expected speaker skips speaker separation.
+
+5
+00:00:24,866 --> 00:00:31,227
+Decide whether live transcription and automatic speaker recognition
+start by default.
+
+6
+00:00:31,227 --> 00:00:38,744
+Reading preferences control the initial transcript view, paragraph
+grouping, timestamps, and speaker labels.
+
+7
+00:00:38,744 --> 00:00:47,418
+AI analysis defaults control detail, language, comparison with recent
+meetings, and the sections to request.
+
+8
+00:00:47,418 --> 00:00:52,045
+Privacy preferences choose automatic, local-preferred, or remote-
+preferred processing.
+
+9
+00:00:52,045 --> 00:00:56,093
+For this remote-only workflow, choose remote processing.
+
+10
+00:00:56,093 --> 00:01:04,767
+Save customizations; they apply to new recordings and newly generated
+analyses without changing existing results.
+
+11
+00:01:05,267 --> 00:01:08,746
+The Library groups meetings below project folders.
+
+12
+00:01:08,746 --> 00:01:17,196
+Search the current folder, create subfolders, and use each item menu to
+move, rename, or delete content.
+
+13
+00:01:17,196 --> 00:01:25,647
+A meeting can contain audio, plain transcript text, structured timed
+segments, Markdown analysis, and structured analysis data.
+
+14
+00:01:25,647 --> 00:01:31,611
+Opening a finished meeting restores its audio player, provenance,
+transcript, and analysis.
+
+15
+00:01:31,611 --> 00:01:39,564
+Open on disk requires the optional transcriber opener helper; every
+other library feature works without it.
+
+16
+00:01:39,564 --> 00:01:43,541
+You can always open the data directory manually.
+
+17
+00:01:43,541 --> 00:01:50,500
+Keep backups because this is alpha software and the on-disk layout may
+still change.
+
+18
+00:01:51,000 --> 00:01:55,939
+By default, the library lives at dot local share slash sit.
+
+19
+00:01:55,939 --> 00:02:07,164
+Transcripts use dot txt files, timed data uses dot meeting dot json,
+recordings live in an audio subfolder, and analyses use Markdown and
+JSON sidecars.
+
+20
+00:02:07,164 --> 00:02:09,858
+Temporary work stays under underscore scratch.
+
+21
+00:02:09,858 --> 00:02:20,185
+When remote processing is enabled, audio is sent to the transcription
+and diarization servers, and transcript text is sent to the analysis
+server.
+
+22
+00:02:20,185 --> 00:02:23,328
+Use only infrastructure appropriate for that data.
+
+23
+00:02:23,328 --> 00:02:29,165
+Connection secrets stay server-side; the Hugging Face token is write-
+only in the browser.
+
+24
+00:02:29,165 --> 00:02:35,451
+The FastAPI service has no authentication and intentionally binds to
+local host by default.
+
+25
+00:02:35,451 --> 00:02:37,696
+Do not expose it publicly.
+
+26
+00:02:37,696 --> 00:02:46,676
+For recording failures, verify that pactl info can see the desktop audio
+server and that FFmpeg and pactl are installed.
+
+27
+00:02:46,676 --> 00:02:50,717
+For connection failures, test SSH first, then each service.
+
+28
+00:02:50,717 --> 00:02:55,207
+Connection refused usually means the tunnel or service is absent.
+
+29
+00:02:55,207 --> 00:02:58,350
+A four-oh-four points to the API path.
+
+30
+00:02:58,350 --> 00:03:03,738
+A model error means the configured model does not match the server.
+
+31
+00:03:03,738 --> 00:03:13,167
+If a local port is occupied, close the process that owns the old tunnel
+or assign a different unique local port.
+
+32
+00:03:13,667 --> 00:03:20,035
+To update, close S I T and run update dot sh from the checkout.
+
+33
+00:03:20,035 --> 00:03:30,043
+It performs a fast-forward pull, refreshes Python dependencies, rebuilds
+the native application when Tauri sources changed, and updates an
+installed desktop entry.
+
+34
+00:03:30,043 --> 00:03:34,136
+Settings, the environment, and library data remain in place.
+
+35
+00:03:34,136 --> 00:03:41,870
+The script refuses to update while the backend is running and refuses to
+pull across uncommitted changes.
+
+36
+00:03:41,870 --> 00:03:54,151
+Use dash dash no pull when you deliberately want to reinstall the
+current working tree, and dash dash force build when the native binary
+must be rebuilt.
+
+37
+00:03:54,151 --> 00:04:06,433
+You now have a remote-only S I T installation with managed SSH tunnels,
+recording and upload workflows, speaker-aware transcripts, structured AI
+analysis, and a maintainable local library.

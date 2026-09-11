@@ -95,7 +95,12 @@ DEFAULTS = {
         "ssh_host": "",
         # Local pyannote fallback only; gated models need approved HF access.
         "local_model": DIARIZE_MODEL,
-        "hf_token": HF_TOKEN,
+        # Never HF_TOKEN here: this dict is the merge baseline for every
+        # save, including unrelated ones, so seeding it from the environment
+        # would silently clobber a stored token (or defeat forget_hf_token)
+        # on the next save that doesn't mention hf_token. The env var is only
+        # a first-run bootstrap value, applied once in get_connections().
+        "hf_token": "",
     },
     "llm": {
         "local_port": _llm_port,
@@ -261,9 +266,13 @@ def get_connections():
         if _cached is None:
             try:
                 values = json.loads(CONNECTIONS_PATH.read_text(encoding="utf-8"))
+                bootstrap = False
             except (OSError, json.JSONDecodeError):
                 values = {}
+                bootstrap = True
             _cached = normalize_connections(values)
+            if bootstrap and HF_TOKEN and not _cached["diarization"]["hf_token"]:
+                _cached["diarization"]["hf_token"] = HF_TOKEN
         return deepcopy(_cached)
 
 

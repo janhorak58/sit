@@ -1,0 +1,5 @@
+[Alex]
+The transcription, speaker recognition, and analysis services all passed their connection checks.
+
+[Jordan]
+The tutorial capture can proceed using sanitized host names and synthetic meeting data.

@@ -1,0 +1,24 @@
+{
+  "summary": "The team finalized a chaptered S-I-T tutorial with five reusable clips. Caption verification and privacy review must both pass before publication.",
+  "chapters": [
+    {"title": "Release plan", "summary": "The team confirms the tutorial format and remaining work.", "evidence": [{"start": 0.0}]},
+    {"title": "Publication decision", "summary": "The master video and shorter clips will both be published.", "evidence": [{"start": 50.4}]}
+  ],
+  "decisions": [
+    {"text": "Publish one chaptered master video and five standalone clips.", "rationale": "The master remains comprehensive while documentation can embed focused clips.", "alternatives": ["One long video only"], "evidence": [{"start": 50.4}]}
+  ],
+  "action_items": [
+    {"text": "Finish and verify English captions.", "owner": "Jordan", "deadline": "Thursday", "priority": "high", "evidence": [{"start": 11.3}]},
+    {"text": "Complete the privacy review.", "owner": "Alex", "deadline": "Before publication", "priority": "high", "evidence": [{"start": 25.0}]}
+  ],
+  "open_questions": [],
+  "risks": [
+    {"text": "Private infrastructure details could appear in screen captures.", "mitigation": "Use aliases, synthetic content, and a frame-by-frame privacy review.", "evidence": [{"start": 25.0}]}
+  ],
+  "speaker_contributions": [
+    {"speaker": "Alex", "commitments": ["Review privacy"], "decisions_proposed": ["Publish master and clips"], "unanswered_asks": []},
+    {"speaker": "Jordan", "commitments": ["Finish captions"], "decisions_proposed": [], "unanswered_asks": []}
+  ],
+  "follow_up": "Subject: S-I-T tutorial publication\n\nThe tutorial format is approved. Jordan will finish captions by Thursday, Alex will complete the privacy review, and publication will proceed after both checks pass.",
+  "changes_since_last": []
+}

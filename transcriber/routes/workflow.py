@@ -1,4 +1,5 @@
 import json
+import logging
 import threading
 from pathlib import Path
 
@@ -32,6 +33,8 @@ from ..summary import remote_status as analysis_remote_status, render_markdown, 
 from ..progress import progress
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 
 @router.get("/preferences")
@@ -172,8 +175,12 @@ def _create_summary(transcript, path, project, preferences):
             meeting["analysis_stale"] = False
             meeting_json.write_text(json.dumps(meeting, ensure_ascii=False, indent=2))
         progress.finish(stage="done", percent=100, message="AI analysis is ready.", saved_path=path)
-    except Exception as exc:
+    except AppError as exc:
         progress.finish(stage="error", message=str(exc), error=str(exc), saved_path=path)
+    except Exception as exc:
+        logger.warning("AI analysis failed for %s: %s", path, exc)
+        message = "The AI analysis could not be generated. Check the Connections panel."
+        progress.finish(stage="error", message=message, error=message, saved_path=path)
 
 
 @router.post("/summaries")

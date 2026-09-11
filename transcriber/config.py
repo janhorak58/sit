@@ -10,14 +10,41 @@ load_dotenv()
 _data_home = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
 if not _data_home.is_absolute():
     _data_home = Path.home() / ".local" / "share"
+
+
+# Directories the app creates for itself; their presence does not mean the
+# user has a library here.
+INTERNAL_TOP_DIRS = {"_scratch", "nltk_data", ".cache"}
+
+
+def _holds_library(path):
+    """True when ``path`` contains anything the user would recognize as theirs."""
+    if not path.is_dir():
+        return False
+    return any(entry.name not in INTERNAL_TOP_DIRS for entry in path.iterdir())
+
+
+def _default_data_dir():
+    """Where the library lives when the environment does not say.
+
+    The app was called "transcriber" before it was called SIT. An existing
+    library under the old name is adopted rather than abandoned: silently
+    starting in an empty `sit/` reads to the user as data loss.
+    """
+    current = _data_home / "sit"
+    legacy = _data_home / "transcriber"
+    if legacy.is_dir() and not _holds_library(current):
+        return legacy
+    return current
+
+
 DATA_DIR = Path(
-    os.environ.get("TRANSCRIBER_DATA_DIR") or _data_home / "sit"
+    os.environ.get("TRANSCRIBER_DATA_DIR") or _default_data_dir()
 ).expanduser().resolve()
 SCRATCH_DIR = DATA_DIR / "_scratch"
 WAV_PATH = SCRATCH_DIR / "current.wav"
 
 AUDIO_SUBDIR = "audio"
-INTERNAL_TOP_DIRS = {"_scratch", "nltk_data", ".cache"}
 
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
 # Canary, not Parakeet: Parakeet-TDT runs language identification per VAD window

@@ -21,7 +21,18 @@ Recordings, speaker-labeled transcripts, and summaries in one place.
 > release. Keep your own backups of the library directory.
 
 SIT accepts audio/video files, and on a supported Linux audio server it records
-the microphone together with system audio.
+the microphone together with system audio — as two separate channels, not one
+mix. Each track is transcribed on its own pass, so room reverb from the
+microphone never degrades the clean loopback copy of what plays on the machine,
+and speaker labels are namespaced per track (`MIC_SPEAKER_00`,
+`SYSTEM_SPEAKER_00`). A track that stayed silent is skipped, not transcribed.
+
+Both ends of that pair are chosen in the UI: the microphone, and the output
+whose monitor becomes the system track (defaulting to the current default
+sink). Card profiles are never switched automatically — a Bluetooth headset
+has to be put into headset mode in the system sound settings first, because
+doing it silently would drop *both* tracks to narrowband HFP. Bluetooth
+microphones are labelled with that warning in the device list.
 
 The FastAPI backend can be opened in a browser or in a native Tauri window.
 Transcription uses a configured private ASR server, falling back to local
@@ -54,12 +65,10 @@ A level meter under the recording toolbar shows what is actually being
 captured, and says so when nothing is: *No sound is reaching the recording —
 check the selected microphone.*
 
-A Bluetooth headset only has a microphone in its headset (HFP/HSP) profile; in
-A2DP the system still offers a `bluez_input` source that records pure silence.
-SIT switches such a device to a capture-capable profile when the recording
-starts and restores the previous profile when it stops. Devices with no
-capture profile at all are listed as unusable instead of silently recording
-nothing.
+A Bluetooth headset only exposes a usable microphone in its headset (HFP/HSP)
+profile. In A2DP the system may still offer a `bluez_input` source that records
+silence. SIT labels that condition in the device list; switch the headset to a
+capture-capable profile in the system sound settings before starting a recording.
 
 This is a running preview that may change, without speaker recognition yet.
 **Stop & Save** saves the audio and automatically starts a full transcription
@@ -270,7 +279,9 @@ connection and free disk space. No GPU is required in either setup.
 
 Open <http://127.0.0.1:47831>. The backend runs until the command is
 terminated with Ctrl+C. Data is stored by default in `~/.local/share/sit`
-(respects `XDG_DATA_HOME`).
+(respects `XDG_DATA_HOME`). A library left behind by the pre-SIT name at
+`~/.local/share/transcriber` is used as-is instead, until `sit/` holds
+meetings of its own; `TRANSCRIBER_DATA_DIR` overrides both.
 
 ### Option B — native desktop window
 
@@ -304,10 +315,10 @@ installer again. Updating the Rust code requires a fresh
 `cargo build --release`; the launcher uses the binary directly from the
 checkout. Web/Python changes take effect after a backend restart.
 
-The launcher reuses a backend already running on `127.0.0.1:47831`. On Linux
-it may also try to start an already-installed `transcriber.service`. If the
-service is unavailable, it starts Python directly — **systemd is not
-required**, not even under WSL.
+The launcher reuses a backend already running on `127.0.0.1:47831`; otherwise
+it starts Python directly. **systemd is not required**, not even under WSL. The
+installer also retires the legacy `transcriber.service` so an old process cannot
+shadow the current checkout or point SIT at a different library.
 Before opening the window it waits for the API to respond; a broken install is
 reported on stderr. If something goes wrong, run `~/.local/bin/sit` in a
 terminal.
@@ -316,8 +327,8 @@ terminal.
 saving a recording and processing first; an in-progress transcription is
 interrupted on shutdown. An active recorder is stopped on a clean backend
 shutdown, and the temporary WAV stays in `_scratch` (this does not replace the
-button for saving a recording).
-A manually started or systemd-managed backend is not stopped by the window.
+button for saving a recording). A manually started backend is not stopped by
+the window.
 If jobs need to keep running after the window closes, start the backend ahead
 of time using Option A.
 
@@ -430,7 +441,7 @@ leftover, not a supported way to configure SIT.
 Local pyannote needs you to accept the model terms at
 [speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) and
 [segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0).
-The remote model servers are not part of the running desktop app; the Spark
+The remote model servers are not part of the running desktop app; the
 diarization service is documented at [diarizer/README.md](diarizer/README.md),
 and the Canary ASR service at [canary/README.md](canary/README.md).
 
@@ -453,11 +464,9 @@ Missing `pactl`, `ffmpeg`, or rejected PulseAudio modules return an error in
 the UI; a missing audio server does not block library browsing or file
 upload.
 
-The **Open on Disk** button currently uses a separate helper,
-`transcriber-opener`, on `127.0.0.1:47833`. This helper is not part of the
-repository or the desktop installer; without it, the button reports an error.
-No other feature needs it — you can open the library manually in its data
-directory.
+**Open on Disk** explains where the SIT library is stored; it does not require
+or contact a separate helper. Open that data directory directly in your file
+manager when you need to inspect the files.
 
 ## Docker (not recommended)
 

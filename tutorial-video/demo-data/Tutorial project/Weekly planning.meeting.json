@@ -1,0 +1,30 @@
+{
+  "version": 2,
+  "language": "en",
+  "backend": "spark",
+  "num_speakers": 2,
+  "created_at": "2026-09-11T10:00:00+02:00",
+  "duration": 76.0,
+  "asr": {
+    "backend": "spark",
+    "where": "Remote Spark",
+    "model": "nemo-canary-1b-v2",
+    "device": null
+  },
+  "diarization": {
+    "backend": "spark",
+    "where": "Remote Spark",
+    "model": "pyannote/speaker-diarization-3.1",
+    "applied": true,
+    "note": null
+  },
+  "segments": [
+    {"start": 0.0, "end": 10.8, "text": "Good morning. Today we need to confirm the tutorial release plan and assign the remaining work.", "speaker": "Alex"},
+    {"start": 11.3, "end": 24.5, "text": "The screen capture is ready. I will finish captions by Thursday and verify every command against the current release.", "speaker": "Jordan"},
+    {"start": 25.0, "end": 37.0, "text": "Great. I will review the privacy section and make sure no server names or credentials appear in the final export.", "speaker": "Alex"},
+    {"start": 37.7, "end": 49.8, "text": "One open question is whether we should publish the installation clip separately from the full guide.", "speaker": "Jordan"},
+    {"start": 50.4, "end": 65.0, "text": "Yes. We will publish both the chaptered master video and five shorter clips. The documentation will embed the relevant clip beside each setup section.", "speaker": "Alex"},
+    {"start": 65.5, "end": 76.0, "text": "Then the decision is final. I own captions, you own privacy review, and we publish after both checks pass.", "speaker": "Jordan"}
+  ],
+  "analysis_stale": false
+}

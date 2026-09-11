@@ -1,0 +1,16 @@
+00:00 Complete setup and user guide
+00:47 Architecture and supported platforms
+01:44 Install system dependencies
+02:45 Checkout and Python environment
+03:39 Launch in browser or desktop window
+04:35 Connections: managed SSH access
+05:33 Connections: ASR, speakers, and analysis
+07:14 Choose useful defaults
+08:20 Create a meeting workspace
+09:09 Record with a live transcript
+10:14 Upload and generate a transcript
+11:19 Review text and speaker names
+12:15 Generate AI analysis
+13:06 Organize and revisit the library
+13:51 Data, privacy, and troubleshooting
+15:14 Update safely

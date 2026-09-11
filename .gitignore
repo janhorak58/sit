@@ -8,6 +8,7 @@ data/
 *.wav
 .env
 diarizer/.env
+**/.connections.json
 graphify-out/
 src-tauri/target/
 src-tauri/gen/schemas/

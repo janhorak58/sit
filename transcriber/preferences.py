@@ -10,7 +10,7 @@ PREFERENCES_PATH = DATA_DIR / ".preferences.json"
 DEFAULTS = {
     "profile": "meeting",
     "recording": {
-        "default_project": "", "language": "cs", "microphone": "",
+        "default_project": "", "language": "cs", "microphone": "", "output": "",
         "live_enabled": False, "live_chunk_seconds": "10",
         "speaker_count": "", "auto_diarize": True,
     },

@@ -71,6 +71,7 @@
         <section class="create-projects">
           <p class="side-label">Project</p>
           <div id="project-picker" class="project-picker"></div>
+          <p id="project-picker-error" class="field-error" hidden></p>
           <input id="project" type="hidden" value="">
           <label id="new-project-field" class="new-project-field" hidden>
             <span>New project name</span>
@@ -80,6 +81,7 @@
         <section class="create-meta">
           <label><span>Recording name</span><input id="filename" type="text" required></label>
           <div class="folder-preview"><span>Will be created</span><code id="folder-preview">—</code></div>
+          <p id="folder-preview-error" class="field-error" hidden></p>
           <div class="stage-actions">
             <a class="quiet action-link" href="#dashboard">Cancel</a>
             <button id="create-workspace" class="primary" type="submit">Continue to recording →</button>
@@ -104,8 +106,10 @@
             <div class="stage-copy"><div><p class="eyebrow">STEP 1 OF 3</p><h2>Capture or upload audio</h2><p>Choose the input once. The saved recording becomes the source for every later processing step.</p></div></div>
             <div class="workflow-options">
               <label id="record-lang-field"><span>Recording language</span><select id="record-lang"><option value="cs">Czech</option><option value="en">English</option><option value="">Detect automatically</option></select></label>
-              <label id="record-microphone-field"><span>Microphone</span><select id="record-microphone"><option value="">System default</option></select><small>System audio is captured alongside this microphone.</small></label>
+              <label id="record-microphone-field"><span>Microphone</span><select id="record-microphone"><option value="">System default</option></select><small>The room track. Bluetooth headset mics lower quality on both tracks.</small></label>
+              <label id="record-output-field"><span>System audio from</span><select id="record-output"><option value="">Default output</option></select><small>Recorded as a separate second track. Pick the output you actually hear.</small></label>
             </div>
+            <p id="device-error" class="field-error" hidden></p>
             <label id="live-toggle-field" class="live-toggle-field"><input id="live-toggle" type="checkbox"><span class="live-toggle-track" aria-hidden="true"></span><span class="live-toggle-copy"><b>Live transcript while recording</b><small>Optional rough preview. The complete recording is transcribed again after saving.</small></span></label>
             <div id="source-locked" class="source-locked" hidden><span>WAV</span><div><b>Recording is saved</b><small>It stays as the fixed input. Transcript, speakers, and analysis can be regenerated without recording again.</small></div><button id="to-transcript" class="small quiet" type="button">Open transcript step →</button></div>
             <div id="source-choices" class="source-grid">
@@ -207,12 +211,14 @@
           <header class="custom-card-head"><div><p class="eyebrow">RECORDING</p><h2>Capture</h2></div><p>Defaults used when a new recording starts.</p></header>
           <div class="custom-fields two-column">
             <label><span>Default project</span><input data-path="recording.default_project" placeholder="Ask every time"></label>
-            <label><span>Microphone</span><select id="custom-microphone" data-path="recording.microphone"><option value="">System default</option></select><small>System audio is always captured alongside it.</small></label>
+            <label><span>Microphone</span><select id="custom-microphone" data-path="recording.microphone"><option value="">System default</option></select><small>Recorded as the room track.</small></label>
+            <label><span>System audio from</span><select id="custom-output" data-path="recording.output"><option value="">Default output</option></select><small>Second track, taken from this output's monitor.</small></label>
             <label><span>Language</span><select id="custom-language" data-path="recording.language"><option value="cs">Czech</option><option value="en">English</option><option value="">Detect automatically</option></select></label>
             <label><span>Live preview cadence</span><select data-path="recording.live_chunk_seconds"><option value="10">Balanced — 10 seconds</option><option value="20">Quality — 20 seconds</option><option value="30">Focused — 30 seconds</option></select></label>
             <label><span>Expected speakers</span><select id="custom-speakers" data-path="recording.speaker_count"><option value="">Detect automatically</option><option value="1">One — no separation</option><option value="2">Two</option><option value="3">Three</option><option value="4">Four</option></select></label>
           </div>
           <div class="custom-toggles"><label class="setting-toggle"><input type="checkbox" data-path="recording.live_enabled"><span>Live transcript while recording</span></label><label class="setting-toggle"><input type="checkbox" data-path="recording.auto_diarize"><span>Recognize speakers after transcription</span></label></div>
+          <p id="custom-device-error" class="field-error" hidden></p>
         </section>
         <section class="card customization-card">
           <header class="custom-card-head"><div><p class="eyebrow">TRANSCRIPT</p><h2>Reading</h2></div></header>

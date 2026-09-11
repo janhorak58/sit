@@ -37,7 +37,7 @@ def test_transcribe_enhances_audio_before_sending_it_to_the_model(monkeypatch, t
         lambda path, *args, **kwargs: (seen.update(path=path, content=path.read_bytes()), expected)[1],
     )
 
-    assert asr.transcribe(wav, "cs") is expected
+    assert asr.transcribe(wav, "cs") == expected
     assert seen["path"].name == "enhanced.wav"
     assert seen["content"] == b"enhanced"
     assert asr.MODEL_AUDIO_FILTER in ffmpeg_args
@@ -247,7 +247,7 @@ def test_recorder_sets_and_clears_started_at_across_start_stop(monkeypatch, tmp_
     monkeypatch.setattr(recorder_module, "pactl", pactl)
     monkeypatch.setattr(
         recorder_module.subprocess, "Popen",
-        lambda *args, **kwargs: SimpleNamespace(send_signal=lambda sig: None, wait=lambda: wav_path.write_bytes(b"RIFF")),
+        lambda *args, **kwargs: SimpleNamespace(send_signal=lambda sig: None, wait=lambda timeout=None: wav_path.write_bytes(b"RIFF")),
     )
     monkeypatch.setattr(recorder_module.subprocess, "run", lambda *args, **kwargs: None)
 
@@ -275,9 +275,9 @@ def test_microphones_excludes_output_monitors_and_marks_default(monkeypatch):
 
     assert recorder_module.microphones() == [
         {"id": "built-in-mic", "label": "Digital Microphone", "default": False,
-         "available": True, "needs_profile": None, "note": None},
+         "available": True, "bluetooth": False, "note": None},
         {"id": "usb-mic", "label": "USB Microphone", "default": True,
-         "available": True, "needs_profile": None, "note": None},
+         "available": True, "bluetooth": False, "note": None},
     ]
 
 
@@ -301,7 +301,7 @@ def test_recorder_auto_stops_after_max_duration(monkeypatch, tmp_path):
     monkeypatch.setattr(recorder_module, "pactl", pactl)
     monkeypatch.setattr(
         recorder_module.subprocess, "Popen",
-        lambda *args, **kwargs: SimpleNamespace(send_signal=lambda sig: None, wait=lambda: wav_path.write_bytes(b"RIFF")),
+        lambda *args, **kwargs: SimpleNamespace(send_signal=lambda sig: None, wait=lambda timeout=None: wav_path.write_bytes(b"RIFF")),
     )
     monkeypatch.setattr(recorder_module.subprocess, "run", lambda *args, **kwargs: None)
 
@@ -381,7 +381,7 @@ def test_run_pipeline_writes_meeting_json_with_segments(monkeypatch, tmp_path):
     assert data["backend"] == "local"
     assert data["language"] == "en"
     assert data["num_speakers"] == 1
-    assert data["segments"] == [{"start": 0, "end": 1, "text": "hello", "speaker": None}]
+    assert data["segments"] == [{"start": 0, "end": 1, "text": "hello", "speaker": None, "channel": None}]
     assert txt_path.read_text() == "hello"
 
 
@@ -421,10 +421,10 @@ def test_run_pipeline_falls_back_when_diarization_is_unavailable(monkeypatch, tm
 
     state = pipeline_module.progress.snapshot()
     assert state["stage"] == "done"
-    assert "Speaker recognition failed" in state["warning"]
+    assert "without speaker separation" in state["warning"]
     assert txt_path.read_text() == "hello"
     data = json.loads(pipeline_module.meeting_json_path_for(txt_path).read_text())
-    assert data["segments"] == [{"start": 0, "end": 1, "text": "hello", "speaker": None}]
+    assert data["segments"] == [{"start": 0, "end": 1, "text": "hello", "speaker": None, "channel": None}]
 
 
 def test_rerun_diarization_relabels_existing_segments_without_asr(monkeypatch, tmp_path):
@@ -463,7 +463,7 @@ def test_rerun_diarization_relabels_existing_segments_without_asr(monkeypatch, t
     assert result["asr"] == {"backend": "spark", "model": "whisper-large"}
     assert result["segments"][0]["speaker"] == "Eva"
     assert result["diarization"]["applied"] is True
-    assert pipeline_module.progress.snapshot()["message"] == "Speakers were recognized on Spark."
+    assert pipeline_module.progress.snapshot()["message"] == "Speakers were recognized on the remote engine."
 
 
 def test_label_speakers_prefers_spark_diarizer(monkeypatch, tmp_path):
@@ -792,7 +792,7 @@ def test_meeting_json_records_engine_provenance(monkeypatch, tmp_path):
 
     meta = json.loads((tmp_path / "m.meeting.json").read_text())
     assert meta["asr"] == {
-        "backend": "local", "where": "Locally",
+        "backend": "local", "where": pipeline.LOCAL_LABEL,
         "model": pipeline.LOCAL_ASR_MODEL, "device": pipeline.LOCAL_ASR_DEVICE,
     }
     assert meta["diarization"]["applied"] is False

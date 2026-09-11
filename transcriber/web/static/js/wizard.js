@@ -37,6 +37,7 @@ function setSourceState(hasRecording) {
   $('source-status').hidden = hideStarters;
   $('record-lang-field').hidden = hideStarters;
   $('record-microphone-field').hidden = hideStarters;
+  $('record-output-field').hidden = hideStarters;
   $('live-toggle-field').hidden = hideStarters;
 }
 
@@ -57,18 +58,22 @@ function setTranscriptActions(hasTranscript) {
 
 /** Step 3 keeps exactly one primary action: generate, or open what is done. */
 function setSummaryState(hasSummary) {
+  const unknown = hasSummary === null;
   $('summarize').textContent = hasSummary ? 'Regenerate AI analysis' : 'Generate AI analysis';
   $('summarize').classList.toggle('primary', !hasSummary);
-  $('summarize').classList.toggle('quiet', hasSummary);
-  $('summary-offer-title').textContent = hasSummary
-    ? 'AI analysis is ready'
-    : 'Transcript is ready for analysis';
-  $('summary-offer-note').textContent = hasSummary
-    ? 'Open the meeting to read the brief, or regenerate it with different settings.'
-    : 'Analysis runs in the background; the transcript stays unchanged.';
+  $('summarize').classList.toggle('quiet', Boolean(hasSummary));
+  $('summarize').disabled = unknown;
+  $('summary-offer-title').textContent = unknown
+    ? 'Could not check for an existing analysis'
+    : hasSummary ? 'AI analysis is ready' : 'Transcript is ready for analysis';
+  $('summary-offer-note').textContent = unknown
+    ? 'Reload this step before generating a new one — an analysis may already exist.'
+    : hasSummary
+      ? 'Open the meeting to read the brief, or regenerate it with different settings.'
+      : 'Analysis runs in the background; the transcript stays unchanged.';
   $('open-meeting').hidden = !state.transcriptPath;
   $('open-meeting').textContent = hasSummary ? 'Open finished meeting →' : 'Open meeting →';
-  $('open-meeting').classList.toggle('primary', hasSummary);
+  $('open-meeting').classList.toggle('primary', Boolean(hasSummary));
   $('open-meeting').classList.toggle('quiet', !hasSummary);
 }
 
@@ -78,9 +83,14 @@ async function loadSpeakerNames() {
   const path = state.transcriptPath;
   if (!path) { wrap.hidden = true; wrap.replaceChildren(); return; }
   const meeting = await api.readMeeting(path);
+  if (meeting.error) {
+    wrap.hidden = false;
+    wrap.replaceChildren(el('p', {className: 'field-error', textContent: 'Could not load speakers: ' + meeting.error}));
+    return;
+  }
   // Renaming does not change the cue counts, so the open editor stays in
   // place after saving and keeps its confirmation visible.
-  const editor = meeting.error ? null : speakerNameEditor({
+  const editor = speakerNameEditor({
     path,
     segments: meeting.segments,
     onSaved: () => loadSummaryState(),
@@ -92,7 +102,7 @@ async function loadSpeakerNames() {
 async function loadSummaryState() {
   if (!state.transcriptPath) { setSummaryState(false); return; }
   const summary = await api.readSummaryJson(state.transcriptPath);
-  setSummaryState(!summary.error && Object.keys(summary).length > 0);
+  setSummaryState(summary.error ? null : Object.keys(summary).length > 0);
 }
 
 function refreshOutputs() {
@@ -107,7 +117,7 @@ function setBadge(data) {
 }
 
 function refreshBadge() {
-  return api.asrStatus().then(setBadge).catch(() => setBadge({available: false, label: 'Local model'}));
+  return api.asrStatus().then(setBadge).catch(() => setBadge({available: false, label: 'On this computer'}));
 }
 
 function openLibrary(folder) {
@@ -153,6 +163,7 @@ function projectTile(name, label, hint) {
 }
 
 function renderProjects(projects) {
+  $('project-picker-error').hidden = true;
   $('project-picker').replaceChildren(
     ...projects.map(name => projectTile(name, name, 'Existing project')),
     projectTile(NEW_PROJECT, '＋ New project', 'Creates a new folder'),
@@ -169,32 +180,54 @@ function renderProjects(projects) {
 }
 
 async function refreshProjects() {
-  const {projects = []} = await api.projects();
-  renderProjects(projects);
+  const result = await api.projects();
+  if (result.error) {
+    $('project-picker-error').hidden = false;
+    $('project-picker-error').textContent = 'Could not refresh the project list: ' + result.error;
+    return;
+  }
+  renderProjects(result.projects || []);
 }
 
 function microphoneLabel(device) {
+  // The note carries the reason a device is unusable, or the Bluetooth
+  // narrowband warning; either way the user has to see it before recording.
   if (device.note) return device.label + ' — ' + device.note;
-  // A Bluetooth headset in A2DP records silence until its profile switches.
-  if (device.needs_profile) return device.label + ' — needs headset mode (switched automatically)';
   return device.label + (device.default ? ' — system default' : '');
 }
 
-async function refreshMicrophones() {
-  const preferred = getPreferences()?.recording.microphone || '';
-  const selected = $('record-microphone').value || preferred;
-  const result = await api.recordingDevices();
-  const select = $('record-microphone');
-  select.replaceChildren(new Option('System default', ''));
-  (result.microphones || []).forEach(device => {
-    const option = new Option(microphoneLabel(device), device.id);
+function selectIfUsable(select, value) {
+  const usable = [...select.options].some(option => option.value === value && !option.disabled);
+  select.value = usable ? value : '';
+}
+
+function fillDevices(select, devices, placeholder, selected, label) {
+  select.replaceChildren(new Option(placeholder, ''));
+  devices.forEach(device => {
+    const option = new Option(label(device), device.id);
     option.disabled = device.available === false;
     select.append(option);
   });
   if (selected && ![...select.options].some(option => option.value === selected)) {
-    select.append(new Option('Previously selected microphone (not connected)', selected));
+    const missing = new Option('Previously selected device (not connected)', selected);
+    missing.disabled = true;
+    select.append(missing);
   }
-  select.value = selected;
+  // A stored device that cannot record must not stay selected: starting on it
+  // would only produce an error the user never asked for.
+  selectIfUsable(select, selected);
+}
+
+async function refreshMicrophones() {
+  const preferences = getPreferences()?.recording || {};
+  const microphone = $('record-microphone').value || preferences.microphone || '';
+  const output = $('record-output').value || preferences.output || '';
+  const result = await api.recordingDevices();
+  $('device-error').hidden = !result.error;
+  $('device-error').textContent = result.error ? 'Could not list audio devices: ' + result.error : '';
+  fillDevices($('record-microphone'), result.error ? [] : result.microphones || [], 'System default', microphone, microphoneLabel);
+  fillDevices($('record-output'), result.error ? [] : result.outputs || [], 'Default output', output,
+    device => device.label + (device.default ? ' — system default' : ''));
 }
 
 function chosenProject() {
@@ -210,9 +243,17 @@ async function updateSuggestion() {
   const request = ++suggestionRequest;
   const project = chosenProject();
   const name = safeSegment($('filename').value);
-  if (!project) { $('folder-preview').textContent = '—'; return; }
+  $('folder-preview-error').hidden = true;
+  if (!project) { suggestedFolder = ''; $('folder-preview').textContent = '—'; return; }
   const result = await api.suggestFolder(project);
-  if (request !== suggestionRequest || result.error) return;
+  if (request !== suggestionRequest) return;
+  if (result.error) {
+    suggestedFolder = '';
+    $('folder-preview').textContent = '—';
+    $('folder-preview-error').hidden = false;
+    $('folder-preview-error').textContent = 'Could not check the folder name: ' + result.error;
+    return;
+  }
   suggestedFolder = [result.folder, name].filter(Boolean).join('/');
   $('folder-preview').textContent = suggestedFolder || '—';
 }
@@ -237,7 +278,8 @@ function applyPreferences() {
   const recordingDefaults = preferences.recording;
   $('record-lang').value = recordingDefaults.language;
   $('lang').value = recordingDefaults.language;
-  $('record-microphone').value = recordingDefaults.microphone || '';
+  selectIfUsable($('record-microphone'), recordingDefaults.microphone || '');
+  selectIfUsable($('record-output'), recordingDefaults.output || '');
   $('live-toggle').checked = recordingDefaults.live_enabled;
   $('numspeakers').value = recordingDefaults.auto_diarize ? recordingDefaults.speaker_count : '1';
   const brief = preferences.brief;
@@ -301,6 +343,7 @@ function resetWorkspaceView() {
   $('record-lang').disabled = false;
   $('live-toggle').disabled = false;
   $('record-microphone').disabled = false;
+  $('record-output').disabled = false;
   applyPreferences();
   setSourceState(false);
   setTranscriptActions(false);
@@ -330,7 +373,10 @@ const LIVE_STATE_LABEL = {
   stopped: 'Recording finished.',
 };
 
-const EMPTY_DRAFT_HINT = 'Listening… the first transcript will appear after about 10 seconds.';
+function emptyDraftHint() {
+  const seconds = getPreferences()?.recording?.live_chunk_seconds || '10';
+  return `Listening… the first transcript will appear after about ${seconds} seconds.`;
+}
 
 function isNearBottom(node) {
   return node.scrollHeight - node.scrollTop - node.clientHeight < 48;
@@ -369,7 +415,7 @@ function renderDraftSegments(segments, provisionalLast) {
     && segments.slice(0, prevLen - 1).every((seg, index) => sameSeg(seg, renderedDraft[index]));
   renderedDraft = segments;
   if (!segments.length) {
-    wrap.replaceChildren(el('div', {className: 'empty', textContent: EMPTY_DRAFT_HINT}));
+    wrap.replaceChildren(el('div', {className: 'empty', textContent: emptyDraftHint()}));
   } else if (sameHead) {
     wrap.lastElementChild?.classList.remove('is-provisional');
     const lastRow = wrap.children[prevLen - 1];
@@ -417,6 +463,7 @@ function syncRecordingPanel() {
   $('start').disabled = pending;
   $('record-lang').disabled = pending;
   $('live-toggle').disabled = pending;
+  $('record-output').disabled = pending;
   if (pending) {
     $('record-toolbar-label').textContent = !recording.active
       ? 'Recording finished, waiting to save'
@@ -429,7 +476,7 @@ function syncRecordingPanel() {
 
 function transcriptionDone(result) {
   updateWorkspacePaths(state.currentPath, result.saved_path);
-  setBadge({available: result.backend === 'spark', label: result.backend === 'spark' ? 'Remote Spark' : 'Local model'});
+  refreshBadge();
   unlockThrough(3);
   setTranscriptActions(true);
   refreshOutputs();
@@ -458,7 +505,7 @@ export function initWizard() {
     button.onclick = () => go(Number(button.dataset.step));
   });
   refreshBadge();
-  // Saving Connections can flip the engine between Spark and the local model.
+  // Saving Connections can flip the engine between the remote service and the local model.
   window.addEventListener('transcriber:connections-changed', refreshBadge);
   window.addEventListener('transcriber:preferences-changed', applyPreferences);
   refreshProjects();
@@ -483,7 +530,8 @@ export function initWizard() {
     const name = $('filename').value.trim();
     const folder = suggestedFolder;
     if (!project) { alert('Pick a project, or create a new one.'); return; }
-    if (!name || !folder) return;
+    if (!name) { alert('Enter a recording name.'); return; }
+    if (!folder) { alert('Could not determine the save folder. Check the recording name and try again.'); return; }
     $('create-workspace').disabled = true;
     const existing = await api.browse(folder);
     if (!existing.error) {
@@ -528,7 +576,10 @@ export function initWizard() {
   $('to-transcript').onclick = () => go(2);
   $('start').onclick = async () => {
     $('start').disabled = true;
-    const result = await api.startRecording($('record-lang').value, $('live-toggle').checked, $('record-microphone').value);
+    const result = await api.startRecording(
+      $('record-lang').value, $('live-toggle').checked,
+      $('record-microphone').value, $('record-output').value,
+    );
     if (result.error) { $('start').disabled = false; alert('Error: ' + result.error); return; }
     setRecording(true);
   };

@@ -2,6 +2,7 @@
 
 import array
 import json
+import logging
 import signal
 import subprocess
 import sys
@@ -11,6 +12,11 @@ import time
 from .errors import AppError
 
 from .config import MAX_RECORDING_SECONDS, SAMPLE_RATE, SINK_NAME, WAV_PATH
+
+log = logging.getLogger(__name__)
+
+# How long a stopping capture may take to flush and exit before it is killed.
+STOP_TIMEOUT = 5.0
 
 
 def pactl(*args):
@@ -82,16 +88,26 @@ def _sources():
     return _pactl_list("list", "sources")
 
 
-def _source_card(name):
-    """Name of the card owning input source ``name``, or "" when unknown."""
-    for source in _sources():
-        if source.get("name") == name:
-            return (source.get("properties") or {}).get("device.name") or ""
-    return ""
+# A Bluetooth microphone forces the card into HFP, whose 8/16 kHz narrowband
+# codec applies to playback as well. Both the recorded room and the loopback
+# copy of system audio lose their high end, so the transcript gets worse for
+# a convenience the user rarely intended.
+BLUETOOTH_NOTE = (
+    "Bluetooth headset microphone — switches the headset to narrowband HFP "
+    "and lowers audio quality on both tracks. Prefer a built-in or USB microphone."
+)
+NEEDS_PROFILE_NOTE = (
+    "No microphone in the card's current mode. Switch the device to headset "
+    "mode in the system sound settings first."
+)
+
+
+def _is_bluetooth(name, properties):
+    return name.startswith("bluez") or (properties.get("device.bus") or "") == "bluetooth"
 
 
 def microphones():
-    """List physical input sources, flagging the ones that cannot capture."""
+    """List physical input sources, flagging the ones that record badly or not at all."""
     try:
         default = pactl("get-default-source")
     except AppError:
@@ -108,13 +124,40 @@ def microphones():
         # Cards pactl does not report at all are assumed to work; only a known
         # card with a known input-less active profile is flagged.
         ready, profile = capture.get(card, (True, None))
+        bluetooth = _is_bluetooth(name, properties)
+        if not ready:
+            note = NEEDS_PROFILE_NOTE if profile else "This device has no microphone in any profile."
+        else:
+            note = BLUETOOTH_NOTE if bluetooth else None
         devices.append({
             "id": name,
             "label": source.get("description") or properties.get("device.description") or name,
             "default": name == default,
-            "available": bool(ready or profile),
-            "needs_profile": None if ready else profile,
-            "note": None if ready or profile else "This device has no microphone in any profile.",
+            # Only a source that captures right now is usable: the recorder no
+            # longer switches card profiles behind the user's back.
+            "available": bool(ready),
+            "bluetooth": bluetooth,
+            "note": note,
+        })
+    return devices
+
+
+def outputs():
+    """Playback sinks whose monitor can be recorded as the system-audio track."""
+    try:
+        default = pactl("get-default-sink")
+    except AppError:
+        return []
+    devices = []
+    for sink in _pactl_list("list", "sinks"):
+        name = str(sink.get("name") or "")
+        if not name:
+            continue
+        properties = sink.get("properties") or {}
+        devices.append({
+            "id": name,
+            "label": sink.get("description") or properties.get("device.description") or name,
+            "default": name == default,
         })
     return devices
 
@@ -169,19 +212,20 @@ class Recorder:
         self.proc = None
         self.started_at = None
         self.modules = {"sink": None, "loop1": None, "loop2": None}
-        # (card, profile) to put back after a capture-only profile switch.
-        self.restore_profile = None
+        # Set when the current capture stops, so its watchdog can retire.
+        self._stopped = None
         self._lock = threading.Lock()
         # Called under the capture lock before another recording can start.
         # The callback only signals live transcription; it must not wait for ASR.
         self.on_stop = None
 
     def _prepare_source(self, microphone):
-        """Return a concrete input source, switching Bluetooth to HFP if needed.
+        """Validate the chosen input source and return it.
 
-        PipeWire keeps a Bluetooth headset in headset mode only while a real
-        client captures its source.  A PulseAudio loopback is insufficient and
-        WirePlumber switches it back to A2DP after a couple of seconds.
+        Card profiles are never switched here. Forcing a Bluetooth headset
+        into HFP to get a microphone also drops playback to narrowband, so the
+        recording lost quality on both tracks for a mode the user never asked
+        for. A device without a capture profile now reports what to change.
         """
         microphone = microphone or pactl("get-default-source")
         if not microphone:
@@ -191,33 +235,25 @@ class Recorder:
             raise AppError(
                 "The selected microphone is not available. Reconnect it or pick another one."
             )
-        if device["needs_profile"] is None:
-            if not device["available"]:
-                raise AppError(f"{device['label']} has no microphone to record from.")
-            return microphone
-        card_name = _source_card(microphone)
-        card = next((card for card in _cards() if card.get("name") == card_name), None)
-        if card is None:
-            raise AppError(f"{device['label']} has no microphone in its current mode.")
-        previous = card.get("active_profile")
-        pactl("set-card-profile", card["name"], device["needs_profile"])
-        self.restore_profile = (card["name"], previous)
-        # The capture device appears asynchronously after the switch.
-        deadline = time.time() + 5.0
-        while time.time() < deadline:
-            if any(mic["id"] == microphone and mic["needs_profile"] is None for mic in microphones()):
-                return microphone
-            time.sleep(0.2)
-        raise AppError(
-            f"{device['label']} did not provide a microphone after switching to "
-            f"{device['needs_profile']}. Pick another microphone."
-        )
+        if not device["available"]:
+            raise AppError(f"{device['label']}: {device['note']}")
+        return microphone
+
+    def _prepare_monitor(self, output):
+        """Monitor source of the sink whose playback belongs on the system track."""
+        if not output:
+            return "@DEFAULT_SINK@.monitor"
+        if not any(sink["id"] == output for sink in outputs()):
+            raise AppError(
+                "The selected output is not available. Reconnect it or pick another one."
+            )
+        return f"{output}.monitor"
 
     @property
     def is_recording(self):
         return self.proc is not None
 
-    def start(self, microphone=""):
+    def start(self, microphone="", output=""):
         with self._lock:
             if self.is_recording:
                 raise AppError("Recording is already running.")
@@ -228,15 +264,17 @@ class Recorder:
                 )
             try:
                 microphone = self._prepare_source(microphone)
+                monitor = self._prepare_monitor(output)
                 self.modules["sink"] = pactl(
                     "load-module", "module-null-sink", f"sink_name={SINK_NAME}",
                     "sink_properties=device.description=MeetingRec",
                 )
-                # The microphone goes directly to ffmpeg: PipeWire then keeps
-                # a Bluetooth headset in its capture-capable HFP profile.
+                # The microphone goes directly to ffmpeg; only playback takes
+                # the loopback detour, from whichever sink the user is
+                # actually listening on rather than always the default one.
                 self.modules["loop2"] = pactl(
                     "load-module", "module-loopback",
-                    "source=@DEFAULT_SINK@.monitor", f"sink={SINK_NAME}",
+                    f"source={monitor}", f"sink={SINK_NAME}",
                 )
                 # ffmpeg opens (and, via -y, truncates) the output file only
                 # once its own startup completes, which is asynchronous with
@@ -248,11 +286,17 @@ class Recorder:
                     "ffmpeg", "-y",
                     "-f", "pulse", "-i", microphone,
                     "-f", "pulse", "-i", f"{SINK_NAME}.monitor",
+                    # Two tracks, never one sum: the loopback is a clean digital
+                    # copy of whatever plays on this machine, while the mic adds
+                    # room reverb and noise. Mixing them buried the clean signal
+                    # under the room; kept apart, each stream is transcribed on
+                    # its own and the channel already tells the speakers apart.
                     "-filter_complex",
-                    "[0:a]highpass=f=70,lowpass=f=7600[mic];"
-                    "[mic][1:a]amix=inputs=2:duration=longest:normalize=0,"
-                    "alimiter=limit=0.95,aresample=async=1",
-                    "-ac", "1", "-ar", SAMPLE_RATE, "-c:a", "pcm_s16le",
+                    "[0:a]highpass=f=70,lowpass=f=7600,"
+                    "aformat=channel_layouts=mono,alimiter=limit=0.95[mic];"
+                    "[1:a]aformat=channel_layouts=mono,alimiter=limit=0.95[sys];"
+                    "[mic][sys]amerge=inputs=2,aresample=async=1",
+                    "-ac", "2", "-ar", SAMPLE_RATE, "-c:a", "pcm_s16le",
                     "-flush_packets", "1", str(self.wav_path),
                 ])
                 self.started_at = time.time()
@@ -264,11 +308,19 @@ class Recorder:
             except Exception:
                 self._stop_locked()
                 raise
-        threading.Thread(target=self._watchdog, args=(self.started_at,), daemon=True).start()
+        self._stopped = threading.Event()
+        threading.Thread(
+            target=self._watchdog, args=(self.started_at, self._stopped), daemon=True
+        ).start()
 
-    def _watchdog(self, started_at):
-        """Auto-stop a recording that runs past MAX_RECORDING_SECONDS."""
-        time.sleep(MAX_RECORDING_SECONDS)
+    def _watchdog(self, started_at, stopped):
+        """Auto-stop a recording that runs past MAX_RECORDING_SECONDS.
+
+        Waits on the event rather than sleeping the full limit, so stopping a
+        recording retires its watchdog instead of parking a thread for hours.
+        """
+        if stopped.wait(MAX_RECORDING_SECONDS):
+            return
         with self._lock:
             if self.started_at == started_at:
                 self._stop_locked()
@@ -281,20 +333,28 @@ class Recorder:
     def _stop_locked(self):
         """Caller holds the capture lock; notification cannot race a new capture."""
         was_recording = self.proc is not None
+        if self._stopped is not None:
+            self._stopped.set()
         if self.proc:
+            # An input that stopped producing frames (headset unplugged,
+            # pipewire restarted) leaves ffmpeg deaf to SIGINT; waiting for it
+            # unbounded would wedge stop, start and cancel behind this lock.
             self.proc.send_signal(signal.SIGINT)
-            self.proc.wait()
+            try:
+                self.proc.wait(timeout=STOP_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                log.warning("Capture ffmpeg ignored SIGINT after %ss; killing it", STOP_TIMEOUT)
+                self.proc.kill()
+                try:
+                    self.proc.wait(timeout=STOP_TIMEOUT)
+                except subprocess.TimeoutExpired:
+                    log.error("Capture ffmpeg survived SIGKILL; abandoning the process")
             self.proc = None
             self.started_at = None
         for key in ("loop2", "loop1", "sink"):
             if self.modules[key]:
                 subprocess.run(["pactl", "unload-module", self.modules[key]], check=False)
                 self.modules[key] = None
-        if self.restore_profile:
-            card, profile = self.restore_profile
-            self.restore_profile = None
-            if profile:
-                subprocess.run(["pactl", "set-card-profile", card, profile], check=False)
         if was_recording and self.on_stop is not None:
             self.on_stop()
         return self.wav_path.exists()

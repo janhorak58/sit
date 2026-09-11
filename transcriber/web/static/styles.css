@@ -448,6 +448,8 @@ button[aria-busy="true"] { opacity: .7; }
 .setrow.ok .setval { color: #1f7a4d; font-weight: 600; }
 .setrow.bad .setval { color: var(--red); font-weight: 600; }
 .sethint { margin: 12px 0 0; padding: 11px 13px; border-left: 3px solid var(--accent); background: var(--accent-soft); font-size: 12px; line-height: 1.5; }
+.field-error { margin: 6px 0 0; color: var(--red); font-size: 11px; line-height: 1.5; }
+.list-error { display: grid; gap: 8px; justify-items: start; color: var(--red); font-size: 12px; }
 
 
 @media (max-width: 760px) {

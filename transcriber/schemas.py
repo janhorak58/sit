@@ -8,6 +8,8 @@ class StartReq(BaseModel):
     language: str = "cs"
     live: bool = False
     microphone: str = ""
+    # Sink whose monitor is recorded as the system-audio track; "" = default sink.
+    output: str = ""
 
 
 class StopReq(BaseModel):

@@ -19,7 +19,7 @@ async function get(url) {
   return body(await fetch(url));
 }
 
-export const startRecording = (language, live, microphone = '') => post('/start', {language, live, microphone});
+export const startRecording = (language, live, microphone = '', output = '') => post('/start', {language, live, microphone, output});
 export const recordingStatus = () => get('/recording/status');
 export const recordingDevices = () => get('/recording/devices');
 export const stopRecording = (folder, filename) => post('/stop', {folder, filename});
@@ -32,6 +32,7 @@ export const transcribe = (path, language, num_speakers) =>
   post('/transcribe', {path, language, num_speakers});
 export const diarize = (path, num_speakers) => post('/diarize', {path, num_speakers});
 export const getProgress = () => get('/progress');
+export const cancelJob = () => post('/progress/cancel');
 export const asrStatus = () => get('/asr/status');
 export const diagnostics = () => get('/asr/diagnostics');
 export const projects = () => get('/projects');
