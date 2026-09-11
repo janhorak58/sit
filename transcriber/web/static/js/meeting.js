@@ -560,7 +560,13 @@ export async function openMeeting(path, wavPath, title) {
   renderMeta(meeting);
   $('meeting-rename').onclick = () => {
     const folder = folderFor(path);
-    window.dispatchEvent(new CustomEvent('transcriber:rename-meeting', {detail: {folder, name: title, wavPath, onSuccess: (_folder, name) => openMeeting(`${folder}/${name}.txt`, wavPath ? `${folder}/audio/${name}.wav` : null, name)}}));
+    // A meeting in its own folder takes that folder's name with it, so the
+    // reopen path comes from the server's answer, not from the old folder.
+    const onSuccess = (newFolder, name) => {
+      const prefix = newFolder ? newFolder + '/' : '';
+      openMeeting(`${prefix}${name}.txt`, wavPath ? `${prefix}audio/${name}.wav` : null, name);
+    };
+    window.dispatchEvent(new CustomEvent('transcriber:rename-meeting', {detail: {folder, name: title, wavPath, onSuccess}}));
   };
   renderCurrentMode();
   location.hash = '#meeting';

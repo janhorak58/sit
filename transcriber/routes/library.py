@@ -71,8 +71,8 @@ def audio(path: str):
 
 @router.post("/library/move")
 def move(req: MoveReq):
-    library.move_item(req.folder, req.name, req.to_folder, req.to_name, req.wav_path)
-    return {"ok": True}
+    result = library.move_item(req.folder, req.name, req.to_folder, req.to_name, req.wav_path)
+    return {"ok": True, **result}
 
 
 @router.post("/library/delete")

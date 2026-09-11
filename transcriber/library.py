@@ -30,18 +30,9 @@ def atomic_write_text(path, text):
     os.replace(tmp, path)
 
 
-def browse(rel_folder):
-    """Folder listing merging transcripts and recordings into one item per name."""
-    target = DATA_DIR if not rel_folder else resolve_in_data(rel_folder)
-    if target is None or not target.is_dir():
-        raise AppError("invalid path")
-
+def _items_in(target, rel_folder):
+    """One entry per recording name in ``target``, merging its artifacts."""
     entries = list(target.iterdir())
-    hidden = INTERNAL_TOP_DIRS | {AUDIO_SUBDIR}
-    subfolders = sorted(
-        p.name for p in entries
-        if p.is_dir() and p.name not in hidden and not p.name.startswith(".")
-    )
     files = [p.name for p in entries if p.is_file()]
     txt_stems = {Path(f).stem for f in files if f.endswith(".txt") and not f.endswith(".summary.txt")}
     summary_stems = {f[:-11] for f in files if f.endswith(".summary.md")}
@@ -54,10 +45,12 @@ def browse(rel_folder):
         for p in entries if p.is_file() and p.name.endswith(".wav")
     }
     wav_map = {**legacy_wav, **wav_map}
-
-    names = sorted(set(txt_stems) | set(wav_map))
-    items = [{
+    return [{
         "name": n,
+        # Folder the artifacts actually live in. Recordings kept in their own
+        # folder are listed by their parent, so the browser cannot assume the
+        # folder it is showing.
+        "dir": rel_folder,
         "txt": n in txt_stems,
         "wav": n in wav_map,
         "wav_path": rel_to_data(wav_map[n]) if n in wav_map else None,
@@ -65,7 +58,47 @@ def browse(rel_folder):
         "summary_path": rel_to_data(target / f"{n}.summary.md") if n in summary_stems else None,
         "segments": n in meeting_json_stems,
         "summary_json": n in summary_json_stems,
-    } for n in names]
+    } for n in sorted(set(txt_stems) | set(wav_map))]
+
+
+def _visible_subfolders(target):
+    hidden = INTERNAL_TOP_DIRS | {AUDIO_SUBDIR}
+    return sorted(
+        p.name for p in target.iterdir()
+        if p.is_dir() and p.name not in hidden and not p.name.startswith(".")
+    )
+
+
+def is_recording_folder(path):
+    """True for a folder that is only the container of the recording it is named after.
+
+    Every new recording gets its own folder so transcript, summary and audio
+    stay together. Showing that as a folder to click through made the library
+    one wrapper deep for every meeting, so such a folder is listed as the
+    recording itself instead.
+    """
+    if not path.is_dir() or _visible_subfolders(path):
+        return False
+    items = _items_in(path, "")
+    return len(items) == 1 and items[0]["name"] == path.name
+
+
+def browse(rel_folder):
+    """Folder listing merging transcripts and recordings into one item per name."""
+    target = DATA_DIR if not rel_folder else resolve_in_data(rel_folder)
+    if target is None or not target.is_dir():
+        raise AppError("invalid path")
+
+    items = _items_in(target, rel_folder)
+    subfolders = []
+    for name in _visible_subfolders(target):
+        child = target / name
+        child_rel = f"{rel_folder}/{name}" if rel_folder else name
+        if is_recording_folder(child):
+            items.extend(_items_in(child, child_rel))
+        else:
+            subfolders.append(name)
+    items.sort(key=lambda item: item["name"])
     return {"folder": rel_folder, "subfolders": subfolders, "items": items}
 
 
@@ -117,6 +150,31 @@ def delete_file(path):
         target.with_name(f"{target.name[:-len('.summary.md')]}.summary.json").unlink(missing_ok=True)
     elif target.suffix == ".txt":
         meeting_json_path_for(target).unlink(missing_ok=True)
+    holder = target.parent.parent if target.parent.name == AUDIO_SUBDIR else target.parent
+    _prune_recording_folder(holder)
+
+
+def _prune_recording_folder(path):
+    """Remove a per-recording folder once its last artifact is gone.
+
+    Without this, deleting or moving a meeting leaves an empty wrapper folder
+    behind, which the library would then show as a real folder to open.
+    """
+    try:
+        relative = path.resolve().relative_to(DATA_DIR.resolve())
+    except (ValueError, OSError):
+        return
+    # Never touch the library root or a project folder the user made.
+    if len(relative.parts) < 2 or relative.parts[0] in INTERNAL_TOP_DIRS:
+        return
+    if _visible_subfolders(path) or _items_in(path, ""):
+        return
+    if any(p.is_file() for p in path.iterdir() if p.name != AUDIO_SUBDIR):
+        return
+    audio = path / AUDIO_SUBDIR
+    if audio.is_dir() and any(audio.iterdir()):
+        return
+    shutil.rmtree(path)
 
 
 def audio_dir_for(folder):
@@ -281,8 +339,21 @@ def move_item(folder, name, to_folder, to_name, wav_path=None):
         raise AppError("item not found")
     if any(destination.exists() for _, destination, _ in moves):
         raise AppError("destination item already exists")
+    # Classified before the rename: afterwards the folder no longer matches
+    # the name it wrapped, so it would never look like a recording folder.
+    wraps_this_item = src_dir.name == name and is_recording_folder(src_dir)
     for _, destination, _ in moves:
         destination.parent.mkdir(parents=True, exist_ok=True)
     for source, destination, _ in moves:
         source.rename(destination)
-    return [kind for _, _, kind in moves]
+    final_dir = dst_dir
+    if src_dir != dst_dir:
+        _prune_recording_folder(src_dir)
+    elif wraps_this_item:
+        # A meeting kept in its own folder is shown by that folder's name;
+        # renaming the meeting has to carry the wrapper with it.
+        renamed_dir = src_dir.with_name(to_name)
+        if not renamed_dir.exists():
+            src_dir.rename(renamed_dir)
+            final_dir = renamed_dir
+    return {"moved": [kind for _, _, kind in moves], "folder": rel_to_data(final_dir)}
