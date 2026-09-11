@@ -318,6 +318,22 @@ def test_recorder_auto_stops_after_max_duration(monkeypatch, tmp_path):
 
 
 
+def test_start_reports_microphone_only_fallback(monkeypatch, tmp_path):
+    from transcriber.routes import recording as recording_module
+
+    calls = []
+    fake_recorder = SimpleNamespace(
+        wav_path=tmp_path / "current.wav",
+        system_audio=False,
+        start=lambda microphone, output: calls.append((microphone, output)),
+    )
+    monkeypatch.setattr(recording_module, "recorder", fake_recorder)
+    monkeypatch.setattr(recording_module, "live", SimpleNamespace(start=lambda *args, **kwargs: calls.append(args)))
+
+    assert recording_module.start() == {"ok": True, "system_audio": False}
+    assert calls[0] == ("", "")
+
+
 def test_recording_cancel_discards_audio_without_saving(monkeypatch, tmp_path):
     from transcriber.routes import recording as recording_module
 

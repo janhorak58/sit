@@ -191,11 +191,12 @@ set them, and do not start an additional PulseAudio server on top of WSLg.
 See [Linux GUI apps in WSL](https://learn.microsoft.com/windows/wsl/tutorials/gui-apps).
 
 **Windows microphone and system audio are not the same thing.** The recorder
-needs the PulseAudio modules `module-null-sink`, `module-loopback`, and an
-output monitor. WSLg may not provide them; Windows system audio cannot be
-guaranteed by this implementation. On error, use **Upload File**: record in
-Windows and upload it through the UI. Upload uses `ffmpeg`, not PulseAudio.
-WSLg support is not the same as native Windows build support.
+uses PulseAudio modules `module-null-sink`, `module-loopback`, and an output
+monitor to capture system audio. WSLg may reject those modules, so Windows
+system audio cannot be guaranteed. If that happens, SIT continues with the
+selected WSL microphone as a single track and marks the running recording as
+microphone-only; use **Upload File** for a recording that must include Windows
+audio. WSLg support is not the same as native Windows build support.
 
 ### 2. Fedora
 
@@ -333,16 +334,47 @@ meetings of its own; `TRANSCRIBER_DATA_DIR` overrides both.
 
 ### Option B — native desktop window
 
-Install stable Rust via [rustup](https://rustup.rs/) (Arch and Fedora
-commands above install it from the distribution). After the rustup script
-install, load `source "$HOME/.cargo/env"`. System build dependencies are in
-the platform blocks above;
-[official Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
+The desktop shell is a Rust/Tauri binary. Build it only after completing the
+common Python setup above: it starts `.venv/bin/python -m transcriber` when no
+backend is already listening, so a Cargo build alone is not a complete SIT
+install.
+
+Install stable Rust with [rustup](https://rustup.rs/) (the Arch and Fedora
+platform commands above install it from the distribution). If you used the
+rustup installer, make Cargo available in the current shell:
+
+```bash
+source "$HOME/.cargo/env"
+cargo --version
+rustc --version
+```
+
+The native-only Linux packages from your platform section — compiler toolchain,
+`pkg-config`, WebKitGTK 4.1, OpenSSL, xdotool, appindicator, and librsvg — must
+be installed before building. From the repository root, create the optimized
+release binary and verify the installer can use it:
 
 ```bash
 cargo build --release --manifest-path src-tauri/Cargo.toml
+test -x src-tauri/target/release/transcriber-desktop
 python3 scripts/install-desktop.py
 ```
+
+Cargo downloads and compiles the pinned Tauri dependencies on the first build;
+later unchanged builds reuse `src-tauri/target/`. The installer must run from
+this checkout because it writes a launcher pointing to this exact release
+binary and this checkout's `.venv`. It makes no system-wide changes and never
+needs `sudo`.
+
+For a development build without creating a menu entry, run the shell directly:
+
+```bash
+cargo run --manifest-path src-tauri/Cargo.toml
+```
+
+It uses Cargo's debug binary and starts (or reuses) the backend exactly as the
+installed launcher does. Press Ctrl+C in the terminal or close the window to
+exit; the latter stops only the backend the window started itself.
 
 **SIT** will appear in your application menu. You can also launch it from a
 terminal by absolute path:

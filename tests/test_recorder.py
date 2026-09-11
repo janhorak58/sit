@@ -46,7 +46,7 @@ HEADPHONES_SINK = {
 }
 
 
-def fake_pactl(monkeypatch, sources, cards, calls=None):
+def fake_pactl(monkeypatch, sources, cards, calls=None, fail_modules=()):
     def pactl(*args):
         if calls is not None:
             calls.append(args)
@@ -65,6 +65,8 @@ def fake_pactl(monkeypatch, sources, cards, calls=None):
             card["active_profile"] = args[2]
             return ""
         if args[:1] == ("load-module",):
+            if args[1] in fail_modules:
+                raise AppError("Module initialization failed")
             return "42"
         return ""
 
@@ -145,6 +147,28 @@ def test_recording_takes_system_audio_from_the_chosen_output(monkeypatch, tmp_pa
     loopback, = [call for call in calls if call[:2] == ("load-module", "module-loopback")]
     assert f"source={HEADPHONES_SINK['name']}.monitor" in loopback
 
+
+
+def test_recording_falls_back_to_microphone_when_loopback_modules_are_rejected(monkeypatch, tmp_path):
+    calls, ffmpeg = [], []
+    fake_pactl(
+        monkeypatch, [BUILTIN_SOURCE], [BUILTIN_CARD], calls,
+        fail_modules=("module-null-sink",),
+    )
+    monkeypatch.setattr(
+        recorder_module.subprocess, "Popen",
+        lambda args, **kwargs: (ffmpeg.extend(args), DummyProcess())[1],
+    )
+    monkeypatch.setattr(recorder_module.subprocess, "run", lambda *a, **k: None)
+    recorder = recorder_module.Recorder(tmp_path / "current.wav")
+
+    recorder.start(BUILTIN_SOURCE["name"])
+
+    assert recorder.system_audio is False
+    assert ["-f", "pulse", "-i", BUILTIN_SOURCE["name"]] == ffmpeg[ffmpeg.index("-f"):ffmpeg.index("-f") + 4]
+    assert f"{recorder_module.SINK_NAME}.monitor" not in ffmpeg
+    assert ["-ac", "1"] == ffmpeg[ffmpeg.index("-ac"):ffmpeg.index("-ac") + 2]
+    assert not [call for call in calls if call[:2] == ("load-module", "module-loopback")]
 
 def test_recording_refuses_an_output_that_is_gone(monkeypatch, tmp_path):
     fake_pactl(monkeypatch, [BUILTIN_SOURCE], [BUILTIN_CARD])

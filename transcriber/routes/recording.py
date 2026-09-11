@@ -32,7 +32,7 @@ def start(req: StartReq | None = None):
             recorder.wav_path, (req.language if req else "cs") or "",
             enabled=req.live if req else True,
         )
-        return {"ok": True}
+        return {"ok": True, "system_audio": recorder.system_audio}
 
 
 @router.post("/recording/cancel")
@@ -52,6 +52,7 @@ def status():
         "started_at": recorder.started_at * 1000 if recorder.started_at else None,
         "max_seconds": MAX_RECORDING_SECONDS,
         "available": not recorder.is_recording and WAV_PATH.exists(),
+        "system_audio": recorder.system_audio,
         "live": live.snapshot(),
         # Drives the waveform meter, so the user can see the microphone work.
         "levels": capture_levels(WAV_PATH) if recorder.is_recording else None,

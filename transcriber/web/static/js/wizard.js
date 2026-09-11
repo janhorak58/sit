@@ -581,7 +581,7 @@ export function initWizard() {
       $('record-microphone').value, $('record-output').value,
     );
     if (result.error) { $('start').disabled = false; alert('Error: ' + result.error); return; }
-    setRecording(true);
+    setRecording(true, Date.now(), result.system_audio !== false);
   };
   $('cancel-record').onclick = async () => {
     if (!confirm('Really cancel the recording? The take will not be kept.')) return;

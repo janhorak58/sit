@@ -212,6 +212,10 @@ class Recorder:
         self.proc = None
         self.started_at = None
         self.modules = {"sink": None, "loop1": None, "loop2": None}
+        # A Linux audio server can provide an input source but reject the
+        # virtual sink needed for loopback (notably some WSLg setups). In that
+        # case keep the usable microphone capture instead of rejecting it.
+        self.system_audio = False
         # Set when the current capture stops, so its watchdog can retire.
         self._stopped = None
         self._lock = threading.Lock()
@@ -265,38 +269,48 @@ class Recorder:
             try:
                 microphone = self._prepare_source(microphone)
                 monitor = self._prepare_monitor(output)
-                self.modules["sink"] = pactl(
-                    "load-module", "module-null-sink", f"sink_name={SINK_NAME}",
-                    "sink_properties=device.description=MeetingRec",
-                )
-                # The microphone goes directly to ffmpeg; only playback takes
-                # the loopback detour, from whichever sink the user is
-                # actually listening on rather than always the default one.
-                self.modules["loop2"] = pactl(
-                    "load-module", "module-loopback",
-                    f"source={monitor}", f"sink={SINK_NAME}",
-                )
+                try:
+                    self.modules["sink"] = pactl(
+                        "load-module", "module-null-sink", f"sink_name={SINK_NAME}",
+                        "sink_properties=device.description=MeetingRec",
+                    )
+                    # The microphone goes directly to ffmpeg; only playback takes
+                    # the loopback detour, from whichever sink the user is
+                    # actually listening on rather than always the default one.
+                    self.modules["loop2"] = pactl(
+                        "load-module", "module-loopback",
+                        f"source={monitor}", f"sink={SINK_NAME}",
+                    )
+                    self.system_audio = True
+                except AppError as exc:
+                    self._unload_modules()
+                    log.warning("System-audio loopback unavailable; recording microphone only: %s", exc)
+                    self.system_audio = False
                 # ffmpeg opens (and, via -y, truncates) the output file only
                 # once its own startup completes, which is asynchronous with
                 # this call returning. Remove any stale wav synchronously so a
                 # live-draft worker started right after this never reads a
                 # previous session's leftover audio before ffmpeg gets to it.
                 self.wav_path.unlink(missing_ok=True)
+                inputs = ["-f", "pulse", "-i", microphone]
+                if self.system_audio:
+                    inputs += ["-f", "pulse", "-i", f"{SINK_NAME}.monitor"]
+                    filters = (
+                        "[0:a]highpass=f=70,lowpass=f=7600,"
+                        "aformat=channel_layouts=mono,alimiter=limit=0.95[mic];"
+                        "[1:a]aformat=channel_layouts=mono,alimiter=limit=0.95[sys];"
+                        "[mic][sys]amerge=inputs=2,aresample=async=1"
+                    )
+                    channels = "2"
+                else:
+                    filters = (
+                        "[0:a]highpass=f=70,lowpass=f=7600,"
+                        "aformat=channel_layouts=mono,alimiter=limit=0.95"
+                    )
+                    channels = "1"
                 self.proc = subprocess.Popen([
-                    "ffmpeg", "-y",
-                    "-f", "pulse", "-i", microphone,
-                    "-f", "pulse", "-i", f"{SINK_NAME}.monitor",
-                    # Two tracks, never one sum: the loopback is a clean digital
-                    # copy of whatever plays on this machine, while the mic adds
-                    # room reverb and noise. Mixing them buried the clean signal
-                    # under the room; kept apart, each stream is transcribed on
-                    # its own and the channel already tells the speakers apart.
-                    "-filter_complex",
-                    "[0:a]highpass=f=70,lowpass=f=7600,"
-                    "aformat=channel_layouts=mono,alimiter=limit=0.95[mic];"
-                    "[1:a]aformat=channel_layouts=mono,alimiter=limit=0.95[sys];"
-                    "[mic][sys]amerge=inputs=2,aresample=async=1",
-                    "-ac", "2", "-ar", SAMPLE_RATE, "-c:a", "pcm_s16le",
+                    "ffmpeg", "-y", *inputs, "-filter_complex", filters,
+                    "-ac", channels, "-ar", SAMPLE_RATE, "-c:a", "pcm_s16le",
                     "-flush_packets", "1", str(self.wav_path),
                 ])
                 self.started_at = time.time()
@@ -330,6 +344,12 @@ class Recorder:
         with self._lock:
             return self._stop_locked()
 
+    def _unload_modules(self):
+        for key in ("loop2", "loop1", "sink"):
+            if self.modules[key]:
+                subprocess.run(["pactl", "unload-module", self.modules[key]], check=False)
+                self.modules[key] = None
+
     def _stop_locked(self):
         """Caller holds the capture lock; notification cannot race a new capture."""
         was_recording = self.proc is not None
@@ -351,10 +371,8 @@ class Recorder:
                     log.error("Capture ffmpeg survived SIGKILL; abandoning the process")
             self.proc = None
             self.started_at = None
-        for key in ("loop2", "loop1", "sink"):
-            if self.modules[key]:
-                subprocess.run(["pactl", "unload-module", self.modules[key]], check=False)
-                self.modules[key] = None
+        self._unload_modules()
+        self.system_audio = False
         if was_recording and self.on_stop is not None:
             self.on_stop()
         return self.wav_path.exists()

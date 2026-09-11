@@ -13,7 +13,7 @@ function defaultLive() {
   return {session_id: null, state: 'idle', segments: [], audio_seconds: 0, processed_seconds: 0, error: null, language: ''};
 }
 
-export const recording = {active: false, startedAt: null, maxSeconds: null, available: false, levels: null, live: defaultLive()};
+export const recording = {active: false, startedAt: null, maxSeconds: null, available: false, systemAudio: true, levels: null, live: defaultLive()};
 
 // Render the latest 750 ms as a real waveform. Decibels make quiet laptop
 // microphones visible without painting every non-zero sample at full height.
@@ -47,7 +47,9 @@ function renderWave() {
   wave.classList.toggle('silent', quietFor > SILENT_SECONDS);
   note.textContent = quietFor > SILENT_SECONDS
     ? 'No sound is reaching the recording — check the selected microphone.'
-    : 'Microphone and system audio are being recorded.';
+    : recording.systemAudio
+      ? 'Microphone and system audio are being recorded.'
+      : 'Microphone is being recorded. System-audio loopback is unavailable in this audio server.';
 }
 
 let timerId = null;
@@ -103,10 +105,11 @@ function normalizeLive(live) {
  * the draft is reset and any in-flight status response for the old session
  * is invalidated (it can never resurrect stale text after this call).
  */
-export function setRecording(active, startedAt = Date.now()) {
+export function setRecording(active, startedAt = Date.now(), systemAudio = true) {
   recording.active = active;
   recording.startedAt = active ? startedAt : null;
   recording.available = false;
+  recording.systemAudio = active && systemAudio;
   recording.levels = null;
   recording.live = defaultLive();
   appliedToken = token;
@@ -128,8 +131,8 @@ async function poll() {
     recording.startedAt = status.recording ? status.started_at : null;
     recording.maxSeconds = status.max_seconds ?? recording.maxSeconds;
     recording.available = Boolean(status.available);
+    recording.systemAudio = status.system_audio !== false;
     recording.levels = status.levels || null;
-    recording.live = normalizeLive(status.live);
     publish();
   } finally {
     polling = false;
