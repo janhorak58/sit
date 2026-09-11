@@ -198,6 +198,14 @@ selected WSL microphone as a single track and marks the running recording as
 microphone-only; use **Upload File** for a recording that must include Windows
 audio. WSLg support is not the same as native Windows build support.
 
+**Windows Start menu.** WSLg builds Start menu shortcuts only from system
+application directories, never from `~/.local/share/applications`, so
+`scripts/install-desktop.py` additionally writes
+`/usr/share/applications/sit.desktop` on WSL (it asks for `sudo`). The
+shortcut shows up once WSLg refreshes; `wsl --shutdown` in PowerShell forces
+it immediately. If `sudo` is unavailable the installer prints the two
+commands to run by hand.
+
 ### 2. Fedora
 
 ```bash
