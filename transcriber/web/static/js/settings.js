@@ -73,21 +73,26 @@ function showEndpoints(endpoints) {
   });
 }
 
-// The backend never sends the HuggingFace token back, so an untouched field
-// means "keep what is stored"; clearing it needs the explicit checkbox.
+// The backend never sends stored secrets back, so an untouched field means
+// "keep what is stored"; clearing one needs its explicit checkbox.
 function showSecrets(connections) {
   $('hf-token-state').textContent = connections?.diarization?.hf_token_set
     ? 'A token is stored. Type a new one to replace it.'
     : 'No token stored. The local pyannote fallback needs one for gated models.';
+  $('llm-api-key-state').textContent = connections?.llm?.api_key_set
+    ? 'A key is stored. Type a new one to replace it.'
+    : 'No key stored. Set one if the server answers 401 Unauthorized.';
   document.querySelectorAll('#connections-form [data-connection-secret]').forEach(field => {
     field.value = '';
   });
   $('forget-hf-token').checked = false;
+  $('forget-llm-api-key').checked = false;
 }
 
 function readConnectionForm() {
   const next = currentConnections ? structuredClone(currentConnections) : {};
   delete next.diarization?.hf_token_set;
+  delete next.llm?.api_key_set;
   document.querySelectorAll('#connections-form [data-connection-path]').forEach(field => {
     at(next, field.dataset.connectionPath, field.type === 'checkbox' ? field.checked : field.value);
   });
@@ -95,6 +100,7 @@ function readConnectionForm() {
     at(next, field.dataset.connectionSecret, field.value.trim());
   });
   next.forget_hf_token = $('forget-hf-token').checked;
+  next.forget_llm_api_key = $('forget-llm-api-key').checked;
   return next;
 }
 
@@ -185,6 +191,7 @@ async function loadDiagnostics() {
       row('Status', analysis.available ? 'Running — analysis calls will reach it' : 'Not reachable — analysis requests will fail', analysis.available ? 'ok' : 'bad'),
       row('Endpoint', analysis.url),
       row('Model', analysis.model),
+      row('API key', analysis.api_key ? 'Saved' : 'Not set', analysis.api_key ? 'ok' : 'bad'),
       ...(analysis.last_error ? [el('p', {className: 'sethint', textContent: '→ ' + analysis.last_error})] : []),
     ]),
   ];

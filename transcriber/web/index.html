@@ -301,6 +301,8 @@
               <label><span>Remote port</span><input type="number" min="0" max="65535" value="8100" data-connection-path="llm.remote_port" placeholder="Same as local"><small>Port the service listens on there.</small></label>
             </div>
             <label><span>Model</span><input value="gpt-oss-120b" data-connection-path="llm.model" placeholder="gpt-oss-120b"></label>
+            <label><span>API key</span><input type="password" autocomplete="off" spellcheck="false" data-connection-secret="llm.api_key" placeholder="sk-…"><small id="llm-api-key-state">Sent as an Authorization: Bearer header.</small></label>
+            <label class="setting-toggle"><input id="forget-llm-api-key" type="checkbox"><span>Forget the stored API key</span></label>
             <p class="connection-endpoint" id="endpoint-llm">http://127.0.0.1:8100</p>
             <details class="advanced-options"><summary>Advanced <span>remote address, API path, other machine</span></summary>
               <div class="custom-fields">

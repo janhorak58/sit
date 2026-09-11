@@ -22,20 +22,43 @@ from .errors import AppError
 logger = logging.getLogger(__name__)
 
 
+def _auth_headers(connection):
+    """Bearer header from the saved API key, falling back to the env var."""
+    key = connection.get("api_key") or GPT_OSS_API_KEY
+    return {"Authorization": f"Bearer {key}"} if key else None
+
+
 def remote_status():
     """Public reachability of the private LLM used for AI analysis."""
     connection = get_connection("llm")
     endpoint = connection["endpoint"]
     if not endpoint:
-        return {"available": False, "url": None, "model": connection["model"], "last_error": "LLM endpoint is not set."}
-    headers = {"Authorization": f"Bearer {GPT_OSS_API_KEY}"} if GPT_OSS_API_KEY else None
+        return {"available": False, "url": None, "model": connection["model"], "last_error": "LLM endpoint is not set.", "api_key": False}
+    report = {
+        "url": endpoint,
+        "model": connection["model"],
+        "api_key": bool(connection.get("api_key") or GPT_OSS_API_KEY),
+    }
     try:
-        response = httpx.get(f"{endpoint.rstrip('/')}/v1/models", headers=headers, timeout=2.0)
+        response = httpx.get(
+            f"{endpoint.rstrip('/')}/v1/models", headers=_auth_headers(connection), timeout=2.0
+        )
+        # A rejected key looks like a healthy port, and reporting that as
+        # "running" is what made an unauthorized analysis unexplainable.
+        if response.status_code in (401, 403):
+            return {
+                **report,
+                "available": False,
+                "last_error": (
+                    f"The LLM server rejected the API key (HTTP {response.status_code}). "
+                    "Set it in Connections."
+                ),
+            }
         # A model-list endpoint may not exist behind every gateway; anything
         # short of a server error still proves the port is up and routing.
-        return {"available": response.status_code < 500, "url": endpoint, "model": connection["model"], "last_error": None}
+        return {**report, "available": response.status_code < 500, "last_error": None}
     except httpx.HTTPError as exc:
-        return {"available": False, "url": endpoint, "model": connection["model"], "last_error": str(exc)[:1000]}
+        return {**report, "available": False, "last_error": str(exc)[:1000]}
 
 
 SYSTEM_PROMPT = """You extract evidence-grounded meeting intelligence from a transcript.
@@ -242,7 +265,7 @@ def summarize(text, project="", segments=None, previous_context="", instructions
         context += f"Brief preferences: {instructions}\n\n"
     if previous_context:
         context += f"Previous meeting context (for comparison only):\n{previous_context}\n\n"
-    headers = {"Authorization": f"Bearer {GPT_OSS_API_KEY}"} if GPT_OSS_API_KEY else None
+    headers = _auth_headers(connection)
     try:
         response = httpx.post(
             f"{endpoint.rstrip('/')}/v1/chat/completions",
