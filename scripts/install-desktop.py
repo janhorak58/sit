@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Per-user desktop integration for the SIT (transcriber) desktop app.
 
-Installs, for the current user only (no sudo, no package manager calls):
+Installs, for the current user only (no sudo except the WSL entry below):
 
   - a launcher script at   ~/.local/bin/sit
   - a desktop entry at     ~/.local/share/applications/sit.desktop
   - an app icon at         ~/.local/share/icons/sit.png
+  - a background service   ~/.config/systemd/user/sit.service (when systemd
+    is available), enabled and lingering so the backend is already running
+    after a reboot and the window opens without a cold start
 
 The launcher does not copy the Tauri binary anywhere: it points straight at
 the prebuilt binary inside this source checkout
@@ -74,6 +77,9 @@ XDG_CONFIG_HOME = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".conf
 if not XDG_CONFIG_HOME.is_absolute():
     XDG_CONFIG_HOME = Path.home() / ".config"
 LEGACY_SERVICE_PATH = XDG_CONFIG_HOME / "systemd" / "user" / "transcriber.service"
+SERVICE_NAME = f"{APP_ID}.service"
+SERVICE_PATH = XDG_CONFIG_HOME / "systemd" / "user" / SERVICE_NAME
+SERVICE_MARKER = "# X-SIT-Managed=true"
 
 COMMENT = (
     "Local tool for meeting transcription and summaries with speaker recognition"
@@ -261,6 +267,100 @@ def remove_system_entry() -> None:
         print(f"Could not remove it; run: sudo rm {SYSTEM_ENTRY_PATH}")
 
 
+def _systemctl(*args, check_output: bool = False):
+    return subprocess.run(
+        ["systemctl", "--user", *args],
+        check=False,
+        capture_output=check_output,
+        text=True,
+    )
+
+
+def systemd_available() -> bool:
+    """True when this session has a usable systemd user manager.
+
+    WSL only runs systemd when /etc/wsl.conf enables it, and containers often
+    have none at all; the desktop app starts its own backend in that case, so
+    a missing manager is a downgrade, not an error.
+    """
+    if not shutil.which("systemctl"):
+        return False
+    return _systemctl("is-system-running", check_output=True).stdout.strip() not in {
+        "offline",
+        "",
+    }
+
+
+def service_text() -> str:
+    return (
+        "[Unit]\n"
+        f"{SERVICE_MARKER}\n"
+        "Description=SIT backend (Smart Interactive Transcriber)\n"
+        "After=network.target\n"
+        "\n"
+        "[Service]\n"
+        "Type=exec\n"
+        f"WorkingDirectory={REPO_ROOT}\n"
+        f"ExecStart={VENV_PYTHON} -m transcriber\n"
+        f"Environment=TRANSCRIBER_PROJECT_DIR={REPO_ROOT}\n"
+        "Environment=TRANSCRIBER_HOST=127.0.0.1\n"
+        "Environment=TRANSCRIBER_PORT=47831\n"
+        # The backend usually starts before the VPN is up; it supervises its
+        # own SSH tunnels, so restarting it is only for a real crash.
+        "Restart=on-failure\n"
+        "RestartSec=5\n"
+        "\n"
+        "[Install]\n"
+        "WantedBy=default.target\n"
+    )
+
+
+def write_service() -> None:
+    if not systemd_available():
+        print(
+            "No systemd user manager here, so the backend is not installed as a "
+            "background service; the app starts it on demand instead.\n"
+            "  On WSL, enable systemd: put `[boot]` and `systemd=true` in "
+            "/etc/wsl.conf, run `wsl --shutdown` in PowerShell, then reinstall."
+        )
+        return
+    if SERVICE_PATH.exists() and not _is_managed_text(SERVICE_PATH, SERVICE_MARKER):
+        raise SystemExit(
+            f"A foreign {SERVICE_PATH} exists; leaving it unchanged. Remove it "
+            "yourself if it is stale."
+        )
+    SERVICE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    existed = SERVICE_PATH.exists()
+    SERVICE_PATH.write_text(service_text(), encoding="utf-8")
+    _systemctl("daemon-reload")
+    # Lingering is what makes "already running after a reboot" true: without
+    # it the user manager only exists while a login session does.
+    subprocess.run(["loginctl", "enable-linger", os.environ.get("USER") or ""], check=False,
+                   capture_output=True)
+    enabled = _systemctl("enable", "--now", SERVICE_NAME, check_output=True)
+    print(f"{'Updated' if existed else 'Installed'} background service: {SERVICE_PATH}")
+    if enabled.returncode != 0:
+        print(f"  Could not enable it: {(enabled.stderr or '').strip()}")
+        print(f"  Retry with: systemctl --user enable --now {SERVICE_NAME}")
+    else:
+        _systemctl("restart", SERVICE_NAME)
+        print(f"  Running in the background; logs: journalctl --user -u {SERVICE_NAME} -f")
+
+
+def remove_service() -> None:
+    if not SERVICE_PATH.exists():
+        return
+    if not _is_managed_text(SERVICE_PATH, SERVICE_MARKER):
+        print(f"Leaving a foreign service unchanged: {SERVICE_PATH}")
+        return
+    if shutil.which("systemctl"):
+        _systemctl("disable", "--now", SERVICE_NAME)
+    SERVICE_PATH.unlink()
+    if shutil.which("systemctl"):
+        _systemctl("daemon-reload")
+    print(f"Removed: {SERVICE_PATH}")
+
+
 def _is_managed_text(path, marker) -> bool:
     return marker in path.read_text(encoding="utf-8", errors="replace").splitlines()
 
@@ -378,6 +478,7 @@ def install() -> None:
     migrate_shit_installation()
     migrate_legacy_desktop_entry()
     migrate_legacy_service()
+    write_service()
     print()
     print('Done. Find the app in your application menu as "SIT", or launch it directly:')
     print(f"  {LAUNCHER_PATH}")
@@ -389,6 +490,7 @@ def uninstall() -> None:
     check_supported_platform()
     check_managed_paths()
     remove_system_entry()
+    remove_service()
     removed = []
     for path in (LAUNCHER_PATH, DESKTOP_ENTRY_PATH, ICON_PATH):
         if path.exists():

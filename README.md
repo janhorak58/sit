@@ -206,6 +206,18 @@ shortcut shows up once WSLg refreshes; `wsl --shutdown` in PowerShell forces
 it immediately. If `sudo` is unavailable the installer prints the two
 commands to run by hand.
 
+**Autostart in WSL** needs systemd, which WSL does not enable by default. Put
+
+```ini
+[boot]
+systemd=true
+```
+
+in `/etc/wsl.conf`, run `wsl --shutdown` in PowerShell, and then (re)run
+`python3 scripts/install-desktop.py`. The backend then starts with the
+distribution, so typing `sit` after a reboot opens the window immediately; the
+SSH tunnels connect by themselves once you are on the VPN.
+
 ### 2. Fedora
 
 ```bash
@@ -393,11 +405,13 @@ terminal by absolute path:
 ~/.local/bin/sit
 ```
 
-The installer does not require sudo. It creates:
+The installer does not require sudo (except the WSL Start menu entry). It creates:
 
 - `~/.local/bin/sit` — a launcher with an absolute path to the checkout and `.venv/bin/python`;
 - `${XDG_DATA_HOME:-~/.local/share}/applications/sit.desktop` — a menu entry;
-- `${XDG_DATA_HOME:-~/.local/share}/icons/sit.png` — an icon.
+- `${XDG_DATA_HOME:-~/.local/share}/icons/sit.png` — an icon;
+- `~/.config/systemd/user/sit.service` — the backend as a background service,
+  when a systemd user manager is available.
 
 Reinstalling updates its own files; it refuses to change a foreign file or
 symlink at any of the target locations. After moving the checkout, run the
@@ -405,22 +419,39 @@ installer again. Updating the Rust code requires a fresh
 `cargo build --release`; the launcher uses the binary directly from the
 checkout. Web/Python changes take effect after a backend restart.
 
-The launcher reuses a backend already running on `127.0.0.1:47831`; otherwise
-it starts Python directly. **systemd is not required**, not even under WSL. The
-installer also retires the legacy `transcriber.service` so an old process cannot
-shadow the current checkout or point SIT at a different library.
-Before opening the window it waits for the API to respond; a broken install is
-reported on stderr. If something goes wrong, run `~/.local/bin/sit` in a
-terminal.
+### Background service and autostart
 
-**Closing the window stops the backend the window itself started.** Finish
-saving a recording and processing first; an in-progress transcription is
-interrupted on shutdown. An active recorder is stopped on a clean backend
-shutdown, and the temporary WAV stays in `_scratch` (this does not replace the
-button for saving a recording). A manually started backend is not stopped by
-the window.
-If jobs need to keep running after the window closes, start the backend ahead
-of time using Option A.
+`sit.service` runs `.venv/bin/python -m transcriber` on `127.0.0.1:47831`. The
+installer enables it, starts it, and turns on user lingering
+(`loginctl enable-linger`), so the backend comes up with the machine — after a
+reboot, `sit` only has to open a window against a backend that is already warm.
+Jobs keep running when the window is closed.
+
+```bash
+systemctl --user status sit.service       # state
+journalctl --user -u sit.service -f       # logs
+systemctl --user restart sit.service      # after changing Python code
+systemctl --user disable --now sit.service  # opt out of autostart
+```
+
+The SSH tunnels are supervised by the backend itself: a service that started
+before the VPN was connected retries every 15 s, so the remote engine becomes
+available on its own once the VPN is up — no Reconnect click needed.
+
+**systemd is not required.** Without a user manager (a WSL distribution
+without `systemd=true` in `/etc/wsl.conf`, a container) the installer says so
+and the app starts the backend on demand, exactly as before. The installer
+also retires the legacy `transcriber.service` so an old process cannot shadow
+the current checkout or point SIT at a different library. Before opening the
+window the launcher waits for the API to respond; a broken install is reported
+on stderr. If something goes wrong, run `~/.local/bin/sit` in a terminal.
+
+**Closing the window stops only a backend the window itself started.** With
+the service installed, closing the window leaves the backend running. Without
+it, finish saving a recording and processing first; an in-progress
+transcription is interrupted on shutdown. An active recorder is stopped on a
+clean backend shutdown, and the temporary WAV stays in `_scratch` (this does
+not replace the button for saving a recording).
 
 Remove the desktop integration (does not delete data, the checkout, or `.venv`):
 
@@ -430,11 +461,14 @@ python3 scripts/install-desktop.py --uninstall
 
 ## Updating
 
-With SIT closed, from the checkout:
+With the window closed, from the checkout:
 
 ```bash
 ./update.sh
 ```
+
+An installed `sit.service` is stopped for the update and started again
+afterwards; anything else holding the port still has to be closed by hand.
 
 It pulls the repository, updates the Python dependencies, rebuilds the native
 binary when `src-tauri/` changed, and refreshes the desktop entry if one is
