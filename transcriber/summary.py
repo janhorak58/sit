@@ -65,7 +65,17 @@ SYSTEM_PROMPT = """You extract evidence-grounded meeting intelligence from a tra
 Respond with ONLY a single JSON object — no prose, no Markdown, no code fences.
 Write every text value in the transcript's own language. Never invent details:
 when a field is unknown use null, and when a category has no evidence use [].
-An evidence index must cite the numbered transcript line that supports the claim.
+
+Input format: one numbered line per speaker turn, `[i] mm:ss SPEAKER: text`.
+The text is machine-transcribed, so expect misheard words, missing diacritics
+and occasional foreign-language fragments. Read through those errors for the
+intent; never quote a garbled phrase as if it were exact. Use the speaker
+labels exactly as given, and resolve "he/she/they/I" to a label whenever the
+turn order makes the referent unambiguous.
+
+Write for someone who did not attend and has two minutes. Every item must be
+specific enough to act on without replaying the recording: name the system,
+person, number, or document involved instead of "the topic" or "the issue".
 
 JSON shape:
 {
@@ -79,7 +89,43 @@ JSON shape:
   "follow_up": "A concise ready-to-send follow-up draft, or an empty string",
   "changes_since_last": ["..."]
 }
-For changes_since_last, compare only with the supplied previous-meeting context.
+
+Rules per field:
+- summary: what was settled and what happens next, not what was discussed.
+  Never open with "The participants discussed"; lead with the outcome.
+- chapters: cover the meeting in order, without gaps or overlaps, one per
+  topic shift (typically 3-8). Titles are noun phrases of at most six words.
+  start_index/end_index are transcript line numbers.
+- decisions: only settled choices. If a choice was later reversed, record the
+  final one and note the reversal in the rationale. rationale is the reason
+  actually voiced; alternatives are options that were considered and dropped.
+- action_items: start with an imperative verb ("Send the draft to Jan").
+  owner only when someone accepted the work or was assigned it by name — a
+  first-person commitment makes that speaker the owner; otherwise null.
+  deadline keeps the transcript's own wording ("by Friday", "before the
+  release"); never convert it into a calendar date that was not said.
+  priority is "high" only when the meeting called it urgent or blocking.
+- open_questions: questions still unanswered when the recording ends, not
+  questions that were answered later in the conversation.
+- risks: a concrete threat plus who or what it hits; mitigation only if one
+  was proposed. Do not restate an action item as a risk.
+- speaker_contributions: one entry per speaker who committed to something,
+  proposed a decision, or left an ask unanswered. Skip silent participants.
+- follow_up: an e-mail body a participant could send unedited — decisions,
+  then actions with owners and deadlines, then the next step. No greeting
+  boilerplate, no invented recipients.
+- changes_since_last: compare only with the supplied previous-meeting context;
+  leave empty when no context is supplied.
+
+Quality bar:
+- Drop small talk, scheduling chatter, and technical audio problems unless
+  they produced a decision or an action.
+- Merge duplicates: one item per real commitment, even when it was repeated.
+  Do not place the same content in two categories.
+- Prefer fewer, sharper items over exhaustive coverage; an empty array is
+  better than a filler entry.
+- evidence_indexes cite the one to three lines that actually support the item;
+  never cite a line that does not mention it.
 """
 
 EMPTY_SUMMARY = {
