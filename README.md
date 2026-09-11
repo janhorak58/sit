@@ -46,6 +46,54 @@ that server; the transcript is sent to the summary server when generating a
 summary. All of this is configured in the UI panel **Connections**; for purely
 local ASR, clear the transcription and diarization local ports there.
 
+## Video guides
+
+<p>
+  <a href="https://www.youtube.com/playlist?list=PLDh-GSR7gPYs">
+    <strong>Watch the complete SIT tutorial playlist on YouTube →</strong>
+  </a>
+</p>
+
+<table>
+  <tr>
+    <td width="50%">
+      <a href="https://youtu.be/SBpx8ou_by0"><img src="https://img.youtube.com/vi/SBpx8ou_by0/hqdefault.jpg" alt="Play: Install and launch SIT" width="100%"></a><br>
+      <strong>1. Install and launch</strong><br>
+      Set up the browser or desktop app on a supported Linux system.
+    </td>
+    <td width="50%">
+      <a href="https://youtu.be/_Rqnt7yBPgA"><img src="https://img.youtube.com/vi/_Rqnt7yBPgA/hqdefault.jpg" alt="Play: Configure SIT connections" width="100%"></a><br>
+      <strong>2. Connections</strong><br>
+      Configure managed SSH tunnels and remote AI services.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <a href="https://youtu.be/k8j4wIk-aoE"><img src="https://img.youtube.com/vi/k8j4wIk-aoE/hqdefault.jpg" alt="Play: Record a meeting with SIT" width="100%"></a><br>
+      <strong>3. Recording</strong><br>
+      Capture microphone and selected system audio with a live preview.
+    </td>
+    <td width="50%">
+      <a href="https://youtu.be/OgSvlKAtHwU"><img src="https://img.youtube.com/vi/OgSvlKAtHwU/hqdefault.jpg" alt="Play: Upload, transcribe, and analyze with SIT" width="100%"></a><br>
+      <strong>4. Upload, transcript, and analysis</strong><br>
+      Import a file, label speakers, edit the transcript, and create a brief.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <a href="https://youtu.be/7XGKbOyHMsg"><img src="https://img.youtube.com/vi/7XGKbOyHMsg/hqdefault.jpg" alt="Play: Manage SIT library, privacy, and updates" width="100%"></a><br>
+      <strong>5. Library, privacy, and updates</strong><br>
+      Manage projects, adjust defaults, and keep the local library maintainable.
+    </td>
+    <td width="50%">
+      <a href="https://www.youtube.com/playlist?list=PLDh-GSR7gPYs"><img src="src-tauri/icons/icon.png" alt="SIT tutorial playlist" width="120"></a><br>
+      <strong>Complete playlist</strong><br>
+      Watch the guides in order on YouTube.
+    </td>
+  </tr>
+</table>
+
+
 ## Live transcription while recording
 
 Before recording, pick a language and optionally turn off the **Live
