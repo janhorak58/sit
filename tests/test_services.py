@@ -484,6 +484,38 @@ def test_rerun_diarization_relabels_existing_segments_without_asr(monkeypatch, t
     assert pipeline_module.progress.snapshot()["message"] == "Speakers were recognized on the remote engine."
 
 
+def test_remote_diarizer_status_clears_stale_error_after_healthy_probe(monkeypatch):
+    from transcriber import pipeline as pipeline_module
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "get_connection",
+        lambda name: {"endpoint": "http://spark/v1/audio/diarizations"},
+    )
+    monkeypatch.setattr(pipeline_module, "_last_remote_diarization_error", "Server disconnected")
+    monkeypatch.setattr(
+        pipeline_module.httpx,
+        "get",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            raise_for_status=lambda: None,
+            json=lambda: {
+                "ok": True,
+                "model": "pyannote/speaker-diarization-3.1",
+                "device": "cuda",
+            },
+        ),
+    )
+
+    assert pipeline_module.remote_diarizer_status() == {
+        "available": True,
+        "backend": "spark",
+        "model": "pyannote/speaker-diarization-3.1",
+        "device": "cuda",
+        "last_error": None,
+    }
+    assert pipeline_module._last_remote_diarization_error is None
+
+
 def test_label_speakers_prefers_spark_diarizer(monkeypatch, tmp_path):
     from transcriber import pipeline as pipeline_module
 

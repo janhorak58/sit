@@ -138,6 +138,7 @@ def load_waveform(path):
 
 def remote_diarizer_status():
     """Probe the configured Spark diarizer without loading the local model."""
+    global _last_remote_diarization_error
     endpoint = get_connection("diarization")["endpoint"]
     if not endpoint:
         return {"available": False, "backend": "local", "off": True, "last_error": None}
@@ -146,12 +147,17 @@ def remote_diarizer_status():
         response = httpx.get(health_url, timeout=2.0)
         response.raise_for_status()
         body = response.json()
+
+        # A successful probe means the current service is healthy. Retaining
+        # a prior upload failure here makes the settings panel claim an active
+        # disconnect indefinitely, even after the remote service is restored.
+        _last_remote_diarization_error = None
         return {
             "available": bool(body.get("ok", True)),
             "backend": "spark",
             "model": body.get("model"),
             "device": body.get("device"),
-            "last_error": _last_remote_diarization_error,
+            "last_error": None,
         }
     except (httpx.HTTPError, ValueError, KeyError, OSError) as exc:
         return {
