@@ -656,6 +656,7 @@ node tests/group_segments.mjs
 | POST | `/library/mkdir`, `/library/move`, `/library/delete` | Library edits |
 | POST | `/library/folder/rename`, `/library/folder/delete`, `/library/rename-speaker` | Renames and deletes |
 | GET | `/download` | Text output download |
+| GET | `/library/summary-pdf` | AI analysis exported as PDF |
 
 `POST /start` accepts an optional `{"language":"cs","live":true}` (`"en"` for
 English, `""` for automatic detection; `"live":false` starts recording but

@@ -279,6 +279,30 @@ function syncElapsedTimer(active) {
   if (!active && elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
 }
 
+async function exportSummaryPdf(button) {
+  const path = meetingState.path;
+  button.disabled = true;
+  try {
+    const response = await fetch(api.summaryPdfUrl(path));
+    // Backend errors arrive as a 200 JSON body, so check the payload type too.
+    if (!response.ok || response.headers.get('Content-Type') !== 'application/pdf') {
+      const error = await response.json().catch(() => ({}));
+      alert('Could not export the PDF: ' + (error.error || error.detail || response.status + ' ' + response.statusText));
+      return;
+    }
+    const url = URL.createObjectURL(await response.blob());
+    const link = el('a', {href: url, download: `${path.split('/').pop().replace(/\.txt$/, '')} - AI analysis.pdf`});
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (error) {
+    alert('Could not export the PDF: ' + error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function renderView() {
   const body = $('meeting-body');
   const summary = el('section', {className: 'meeting-summary card'});
@@ -287,7 +311,13 @@ function renderView() {
   const transcript = el('button', {className: 'brief-transcript-action quiet', type: 'button', textContent: 'Open transcript'});
   transcript.onclick = () => openArtifact('TRANSCRIPT', 'Full transcript', renderTranscript);
   renderSummary(summary, hasSummary(meetingState.summary) ? transcript : null);
-  if (!hasSummary(meetingState.summary)) summary.append(transcript);
+  if (hasSummary(meetingState.summary)) {
+    const exportPdf = el('button', {className: 'quiet', type: 'button', textContent: 'Export PDF'});
+    exportPdf.onclick = () => exportSummaryPdf(exportPdf);
+    summary.append(el('div', {className: 'brief-export'}, [exportPdf]));
+  } else {
+    summary.append(transcript);
+  }
   body.replaceChildren(summary);
 }
 

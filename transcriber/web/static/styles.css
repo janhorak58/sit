@@ -354,6 +354,7 @@ button.icon { padding: 3px 7px; border: 0; color: var(--muted); background: tran
 .brief-transcript-action { flex: 0 0 auto; margin: 0; }
 .brief-head .brief-transcript-action { border-color: rgba(255,255,255,.24); color: #fff; background: rgba(255,255,255,.06); }
 .brief-head .brief-transcript-action:hover { border-color: var(--accent); color: var(--accent); background: rgba(217,3,104,.1); }
+.brief-export { margin-top: 24px; padding-top: 20px; display: flex; justify-content: flex-end; border-top: 1px solid var(--line); }
 .brief-index { position: sticky; top: 92px; z-index: 4; display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); border: 1px solid var(--line); background: var(--soft); box-shadow: 0 10px 24px rgba(0,0,0,.07); }
 .brief-index-item { min-width: 0; padding: 15px 16px; display: flex; align-items: center; gap: 10px; border: 0; border-right: 1px solid var(--line); color: var(--ink); background: transparent; font-size: 11px; font-weight: 750; text-align: left; }
 .brief-index-item:last-child { border-right: 0; }
