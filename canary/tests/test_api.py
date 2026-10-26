@@ -1,5 +1,6 @@
 import importlib.util
 import io
+import signal
 import wave
 from pathlib import Path
 from types import SimpleNamespace
@@ -161,3 +162,27 @@ def test_cuda_request_fails_loudly_when_onnxruntime_falls_back_to_cpu(monkeypatc
 
     with pytest.raises(RuntimeError, match="fell back to CPU"):
         canary.get_model()
+
+
+def test_idle_exit_waits_for_a_loaded_model_and_finished_requests(monkeypatch):
+    clock = [1000.0]
+    signals = []
+    monkeypatch.setattr(canary.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(canary.os, "kill", lambda pid, sig: signals.append(sig))
+    monkeypatch.setattr(canary, "IDLE_EXIT_SECONDS", 60.0)
+
+    # An empty process after a restart must stay up, or it would restart forever.
+    monkeypatch.setattr(canary, "_model", None)
+    assert canary._idle_seconds() is None
+
+    monkeypatch.setattr(canary, "_model", object())
+    with canary._activity():
+        clock[0] += 3600
+        # A long request in flight is not idleness, however long it runs.
+        assert canary._idle_seconds() is None
+    clock[0] += 59
+    assert canary._idle_seconds() == 59
+
+    clock[0] += 1
+    canary._exit_when_idle()
+    assert signals == [signal.SIGTERM]

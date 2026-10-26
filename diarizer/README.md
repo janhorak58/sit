@@ -40,7 +40,7 @@ overrides the new Compose default. Do not overwrite your existing `HF_TOKEN`.
 
 ## Verify
 
-Wait until model preload completes, then:
+Then run:
 
 ```sh
 curl -fsS http://127.0.0.1:8000/health
@@ -51,7 +51,11 @@ curl --fail-with-body \
   http://127.0.0.1:8000/v1/audio/diarizations
 ```
 
-A ready service reports `"device":"cuda"` and `"loaded":true`. The inference response contains a `segments` array with `start`, `end`, and `speaker` fields.
+The service starts without the pipeline, so `/health` first reports `"loaded":false`. After the diarization request it reports `"device":"cuda"` and `"loaded":true`. The inference response contains a `segments` array with `start`, `end`, and `speaker` fields.
+
+## GPU memory
+
+After `IDLE_EXIT_SECONDS` (default 900) without a request the process exits and Compose restarts it without the pipeline, which returns its GPU memory to the host. The next request waits for the pipeline to load. `IDLE_EXIT_SECONDS=0` keeps it loaded for good, and only then does `PRELOAD_MODEL=1` load it at startup.
 
 ## Runtime compatibility
 

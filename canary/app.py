@@ -7,10 +7,13 @@ onnx-asr (ONNX Runtime), the same runtime the client uses locally for Parakeet,
 so there is one inference stack to reason about instead of two.
 """
 
+import contextlib
 import os
+import signal
 import subprocess
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 from anyio import to_thread
@@ -28,6 +31,12 @@ WINDOW_SECONDS = float(os.environ.get("CANARY_WINDOW_SECONDS", "30"))
 BATCH_SIZE = int(os.environ.get("CANARY_BATCH_SIZE", "8"))
 DEFAULT_LANGUAGE = os.environ.get("CANARY_DEFAULT_LANGUAGE", "cs")
 PRELOAD_MODEL = os.environ.get("PRELOAD_MODEL", "1").lower() not in {"0", "false", "no"}
+# Exit once the loaded model has gone this many seconds without a request, so
+# its GPU memory goes back to the host between meetings. Only process exit
+# frees all of it: the CUDA context lives as long as the process does. Compose
+# restarts the container empty and the next request loads the model again.
+# 0 keeps the model loaded for good.
+IDLE_EXIT_SECONDS = float(os.environ.get("IDLE_EXIT_SECONDS", "0"))
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(2 * 1024**3)))
 SAMPLE_RATE = 16000
 
@@ -40,6 +49,45 @@ _model = None
 _load_lock = threading.Lock()
 # One GPU, one graph: concurrent sessions would multiply VRAM and thrash.
 _inference_lock = threading.Lock()
+_activity_lock = threading.Lock()
+_active_requests = 0
+_last_activity = time.monotonic()
+
+
+@contextlib.contextmanager
+def _activity():
+    """Mark a model request in flight; the idle clock restarts when it ends."""
+    global _active_requests, _last_activity
+    with _activity_lock:
+        _active_requests += 1
+    try:
+        yield
+    finally:
+        with _activity_lock:
+            _active_requests -= 1
+            _last_activity = time.monotonic()
+
+
+def _idle_seconds():
+    """How long the loaded model has sat unused, or None while it is needed."""
+    with _activity_lock:
+        if _model is None or _active_requests:
+            return None
+        return time.monotonic() - _last_activity
+
+
+def _exit_when_idle():
+    """SIGTERM this process once the model idles past IDLE_EXIT_SECONDS.
+
+    uvicorn treats SIGTERM as a graceful shutdown: it stops accepting new
+    connections and lets a request that slipped in after the check finish.
+    """
+    while True:
+        idle = _idle_seconds()
+        if idle is not None and idle >= IDLE_EXIT_SECONDS:
+            os.kill(os.getpid(), signal.SIGTERM)
+            return
+        time.sleep(min(IDLE_EXIT_SECONDS, 30.0))
 
 
 def get_model():
@@ -137,8 +185,13 @@ def create_app():
     app = FastAPI(title="Canary Transcription Service", version="1.0")
 
     @app.on_event("startup")
-    def preload_model():
-        if PRELOAD_MODEL:
+    def startup():
+        # Preloading under idle exit would reload the model after every
+        # restart and drop it again IDLE_EXIT_SECONDS later, holding the GPU
+        # memory most of the time; the first request loads it instead.
+        if IDLE_EXIT_SECONDS > 0:
+            threading.Thread(target=_exit_when_idle, name="idle-exit", daemon=True).start()
+        elif PRELOAD_MODEL:
             get_model()
 
     @app.get("/health")
@@ -163,9 +216,10 @@ def create_app():
             with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp:
                 temp_path = Path(temp.name)
             await _save_upload(file, temp_path)
-            segments, duration = await to_thread.run_sync(
-                _run_transcription, temp_path, language
-            )
+            with _activity():
+                segments, duration = await to_thread.run_sync(
+                    _run_transcription, temp_path, language
+                )
             return {
                 "model": MODEL_ID,
                 "language": language or DEFAULT_LANGUAGE,

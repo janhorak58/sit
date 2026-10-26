@@ -14,6 +14,7 @@ services:
       DIARIZE_DEVICE: ${DIARIZE_DEVICE:-cuda}
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-2147483648}
       PRELOAD_MODEL: ${PRELOAD_MODEL:-1}
+      IDLE_EXIT_SECONDS: ${IDLE_EXIT_SECONDS:-900}
     volumes:
       - huggingface-cache:/models/huggingface
     gpus: all

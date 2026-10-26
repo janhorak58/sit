@@ -47,7 +47,7 @@ restricts access.
 
 ## Verify
 
-Wait until model preload completes, then on the host:
+On the host:
 
 ```sh
 curl -fsS http://127.0.0.1:8208/health
@@ -60,7 +60,9 @@ curl --fail-with-body \
   http://127.0.0.1:8208/v1/audio/transcriptions
 ```
 
-A ready service reports `"device":"cuda"` and `"loaded":true`. The transcription
+The service starts without the model, so `/health` first reports
+`"loaded":false`. After the transcription request it reports `"device":"cuda"`
+and `"loaded":true`. The transcription
 response carries `duration`, `text`, and a `segments` array of
 `start`/`end`/`text` — exactly the `verbose_json` subset the client stitches
 chunks from. If `/health` reports `"device":"cuda"` but throughput looks like
@@ -94,6 +96,8 @@ serves whatever `CANARY_MODEL` it loaded regardless of the requested name.
 | `CANARY_BATCH_SIZE` | `8` | Windows per forward pass; trades VRAM for throughput |
 | `CANARY_DEFAULT_LANGUAGE` | `cs` | Used when a request omits `language` |
 | `CANARY_DEVICE` | `cuda` | `cpu` is for debugging only |
+| `IDLE_EXIT_SECONDS` | `900` | The process exits after this long without a request and Compose restarts it without the model, which returns its GPU memory. The next request waits for the model to load. `0` keeps the model loaded for good. |
+| `PRELOAD_MODEL` | `1` | Load the model at startup. Applies only with `IDLE_EXIT_SECONDS=0`. |
 
 Silence never reaches the model: Silero VAD (CPU) cuts speech into windows
 first, which is also what keeps segment timestamps meaningful.
