@@ -61,6 +61,10 @@ LOCAL_ASR_VAD_MODEL = os.environ.get("LOCAL_ASR_VAD_MODEL", "silero")
 # Attention decoding drifts on long windows, so VAD cuts speech into windows
 # this long before recognition.
 LOCAL_ASR_WINDOW_SECONDS = float(os.environ.get("LOCAL_ASR_WINDOW_SECONDS", "30"))
+# VAD cuts speech only at pauses at least this long. Silero's 100 ms default
+# shreds read Czech into sub-second scraps the model cannot place: on a Hamlet
+# test WER fell from 37 % at 100 ms to 21 % at 1000 ms.
+LOCAL_ASR_MIN_SILENCE_MS = float(os.environ.get("LOCAL_ASR_MIN_SILENCE_MS", "1000"))
 # Used when a recording carries no explicit language; never leave it unset,
 # or the model falls back to English on Czech audio.
 LOCAL_ASR_DEFAULT_LANGUAGE = os.environ.get("LOCAL_ASR_DEFAULT_LANGUAGE", "cs")
