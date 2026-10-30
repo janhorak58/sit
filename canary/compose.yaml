@@ -12,7 +12,7 @@ services:
       - "${CANARY_BIND:-127.0.0.1}:${CANARY_PORT:-8208}:8000"
     environment:
       HF_TOKEN: ${HF_TOKEN:-}
-      CANARY_MODEL: ${CANARY_MODEL:-nemo-canary-1b-v2}
+      CANARY_MODEL: ${CANARY_MODEL:-onnx-community/whisper-large-v3-turbo}
       CANARY_DEVICE: ${CANARY_DEVICE:-cuda}
       CANARY_QUANTIZATION: ${CANARY_QUANTIZATION:-}
       CANARY_VAD_MODEL: ${CANARY_VAD_MODEL:-silero}

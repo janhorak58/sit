@@ -47,10 +47,10 @@ WAV_PATH = SCRATCH_DIR / "current.wav"
 AUDIO_SUBDIR = "audio"
 
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
-# Canary, not Parakeet: Parakeet-TDT runs language identification per VAD window
-# and ignores a requested language, so Czech recordings drift into Slovak and
-# English mid-transcript. Canary takes the language as an input.
-LOCAL_ASR_MODEL = os.environ.get("LOCAL_ASR_MODEL", "nemo-canary-1b-v2")
+# Not Parakeet: Parakeet-TDT runs language identification per VAD window and
+# ignores a requested language, so Czech recordings drift into Slovak and
+# English mid-transcript. Whisper takes the language as a decoder prompt token.
+LOCAL_ASR_MODEL = os.environ.get("LOCAL_ASR_MODEL", "onnx-community/whisper-large-v3-turbo")
 # Empty = resolve from HuggingFace cache; set to a directory for an offline copy.
 LOCAL_ASR_PATH = os.environ.get("LOCAL_ASR_PATH", "")
 # int8 halves RAM and roughly doubles CPU speed at a small accuracy cost;
@@ -58,8 +58,8 @@ LOCAL_ASR_PATH = os.environ.get("LOCAL_ASR_PATH", "")
 LOCAL_ASR_QUANTIZATION = os.environ.get("LOCAL_ASR_QUANTIZATION", "int8")
 LOCAL_ASR_DEVICE = os.environ.get("LOCAL_ASR_DEVICE", "cpu")
 LOCAL_ASR_VAD_MODEL = os.environ.get("LOCAL_ASR_VAD_MODEL", "silero")
-# Attention decoding drifts on long windows, so VAD cuts speech into windows
-# this long before recognition.
+# Whisper reads at most 30 s per pass and attention decoding drifts on long
+# windows, so VAD cuts speech into windows this long before recognition.
 LOCAL_ASR_WINDOW_SECONDS = float(os.environ.get("LOCAL_ASR_WINDOW_SECONDS", "30"))
 # VAD cuts speech only at pauses at least this long. Silero's 100 ms default
 # shreds read Czech into sub-second scraps the model cannot place: on a Hamlet
@@ -75,7 +75,9 @@ SPARK_DIARIZER_URL = os.environ.get(
 SPARK_WHISPER_URL = os.environ.get(
     "SPARK_WHISPER_URL", "http://127.0.0.1:8208/v1/audio/transcriptions"
 )
-SPARK_WHISPER_MODEL = os.environ.get("SPARK_WHISPER_MODEL", "nemo-canary-1b-v2")
+SPARK_WHISPER_MODEL = os.environ.get(
+    "SPARK_WHISPER_MODEL", "onnx-community/whisper-large-v3-turbo"
+)
 OMNIROUTE_URL = os.environ.get("OMNIROUTE_URL", "http://127.0.0.1:8100")
 OMNIROUTE_MODEL = os.environ.get("OMNIROUTE_MODEL", "gpt-oss-120b")
 GPT_OSS_API_KEY = os.environ.get("GPT_OSS_API_KEY", "")
