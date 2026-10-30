@@ -263,7 +263,7 @@
               <label><span>Local port</span><input type="number" min="0" max="65535" value="8208" data-connection-path="transcription.local_port" placeholder="Off"><small>Port on this computer. Empty = service unused.</small></label>
               <label><span>Remote port</span><input type="number" min="0" max="65535" value="8208" data-connection-path="transcription.remote_port" placeholder="Same as local"><small>Port the service listens on there.</small></label>
             </div>
-            <label><span>Model</span><input value="nemo-canary-1b-v2" data-connection-path="transcription.model" placeholder="nemo-canary-1b-v2"></label>
+            <label><span>Model</span><input value="onnx-community/whisper-large-v3-turbo" data-connection-path="transcription.model" placeholder="onnx-community/whisper-large-v3-turbo"></label>
             <p class="connection-endpoint" id="endpoint-transcription">http://127.0.0.1:8208/v1/audio/transcriptions</p>
             <details class="advanced-options"><summary>Advanced <span>remote address, API path, other machine</span></summary>
               <div class="custom-fields">

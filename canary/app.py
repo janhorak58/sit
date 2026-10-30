@@ -1,10 +1,10 @@
-"""GPU-backed Canary speech-to-text HTTP service.
+"""GPU-backed speech-to-text HTTP service (Whisper large-v3-turbo by default).
 
 OpenAI-compatible on purpose: the transcriber client posts multipart audio to
 `/v1/audio/transcriptions` and probes `/v1/models`, so this service can be
 swapped in wherever a Whisper endpoint was configured. Recognition runs through
-onnx-asr (ONNX Runtime), the same runtime the client uses locally for Parakeet,
-so there is one inference stack to reason about instead of two.
+onnx-asr (ONNX Runtime), the same runtime the client uses locally, so there is
+one inference stack to reason about instead of two.
 """
 
 import contextlib
@@ -19,13 +19,13 @@ from pathlib import Path
 from anyio import to_thread
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 
-MODEL_ID = os.environ.get("CANARY_MODEL", "nemo-canary-1b-v2")
+MODEL_ID = os.environ.get("CANARY_MODEL", "onnx-community/whisper-large-v3-turbo")
 # Empty = full precision. int8 halves VRAM at a small accuracy cost.
 QUANTIZATION = os.environ.get("CANARY_QUANTIZATION", "")
 DEVICE = os.environ.get("CANARY_DEVICE", "cuda")
 VAD_MODEL = os.environ.get("CANARY_VAD_MODEL", "silero")
-# Canary is an attention encoder-decoder: long windows cost quadratic attention
-# and drift, so VAD cuts speech into windows of at most this many seconds.
+# Whisper reads at most 30 s per pass and attention decoding drifts on long
+# windows, so VAD cuts speech into windows of at most this many seconds.
 WINDOW_SECONDS = float(os.environ.get("CANARY_WINDOW_SECONDS", "30"))
 # Cut speech only at pauses at least this long. Silero's 100 ms default shreds
 # read Czech into sub-second scraps: on a Hamlet test WER fell from 37 % at
@@ -189,7 +189,7 @@ async def _save_upload(upload: UploadFile, path: Path):
 
 
 def create_app():
-    app = FastAPI(title="Canary Transcription Service", version="1.0")
+    app = FastAPI(title="ASR Transcription Service", version="1.0")
 
     @app.on_event("startup")
     def startup():

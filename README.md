@@ -36,7 +36,7 @@ microphones are labelled with that warning in the device list.
 
 The FastAPI backend can be opened in a browser or in a native Tauri window.
 Transcription uses a configured private ASR server, falling back to local
-Canary (CPU, ONNX) when it is unavailable — that fallback is part of the
+Whisper large-v3-turbo (CPU, ONNX) when it is unavailable — that fallback is part of the
 default install. Speaker recognition uses a remote diarizer; the local
 pyannote fallback is an **optional extra** (the only component that needs
 torch), see [Setup B](#setup-b--local-fallback-offline-capable). Summaries
@@ -294,7 +294,7 @@ uv pip install --python .venv/bin/python -r requirements.txt
 
 - Install size: **~175 MB** for the whole `.venv` (measured, Python 3.11).
 - Local ASR still works offline: `onnx-asr` + `onnxruntime` on the CPU, model
-  `nemo-canary-1b-v2` (~1 GB downloaded on first local transcription).
+  `onnx-community/whisper-large-v3-turbo` (~1.1 GB downloaded on first local transcription).
 - Speaker recognition requires a reachable diarization service (set under
   **Connections**). Without it, local speaker recognition reports that the
   optional extra is missing; the transcript is still produced, just without
@@ -555,7 +555,7 @@ Everything else belongs in **Connections**.
 | --- | --- | --- |
 | `TRANSCRIBER_DATA_DIR` | `${XDG_DATA_HOME:-~/.local/share}/sit` | Library root; an explicit value takes precedence, `~` is expanded |
 | `TRANSCRIBER_HOST` / `TRANSCRIBER_PORT` | `127.0.0.1` / `47831` | Backend address for manual runs |
-| `LOCAL_ASR_MODEL` | `nemo-canary-1b-v2` | Local ONNX ASR model (`onnx-asr`); `nemo-parakeet-tdt-0.6b-v3` is faster but ignores the language choice |
+| `LOCAL_ASR_MODEL` | `onnx-community/whisper-large-v3-turbo` | Local ONNX ASR model (`onnx-asr`); `nemo-canary-1b-v2` also respects the language choice |
 | `LOCAL_ASR_PATH` | empty | Path to an offline model copy; empty = HuggingFace cache |
 | `LOCAL_ASR_QUANTIZATION` | `int8` | ONNX weight quantization; empty = full precision |
 | `LOCAL_ASR_DEVICE` | `cpu` | `cpu` or `cuda` (requires `onnxruntime-gpu`) |
@@ -583,7 +583,7 @@ Local pyannote needs you to accept the model terms at
 [segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0).
 The remote model servers are not part of the running desktop app; the
 diarization service is documented at [diarizer/README.md](diarizer/README.md),
-and the Canary ASR service at [canary/README.md](canary/README.md).
+and the ASR service at [canary/README.md](canary/README.md).
 
 The desktop launcher sets `TRANSCRIBER_PROJECT_DIR` and `TRANSCRIBER_PYTHON`
 to absolute paths. When running the binary yourself, set them in the

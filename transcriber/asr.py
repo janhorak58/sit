@@ -2,7 +2,7 @@
 
 The work Spark endpoint is OpenAI-compatible. A fast probe decides whether to
 send the audio there, as 15-minute 32 kbps mp3 chunks (the endpoint caps upload
-size). Any probe or transcription failure falls back to the local Canary
+size). Any probe or transcription failure falls back to the local Whisper
 model; an unavailable work endpoint never blocks transcription.
 """
 import array
@@ -207,7 +207,7 @@ def _wav_duration(wav_path):
 
 
 def _local_transcribe(wav_path, language, on_segment):
-    """Canary over VAD-cut speech windows; silence never reaches the model.
+    """Whisper over VAD-cut speech windows; silence never reaches the model.
 
     The language is always passed. Left to auto-detection, per-window language
     identification makes Czech recordings drift into Slovak and English.
@@ -228,7 +228,7 @@ def _local_transcribe(wav_path, language, on_segment):
     return Transcript(segments, duration, "local")
 
 
-# The remote Canary build answers with verbose_json but without per-segment
+# The remote ASR service answers with verbose_json but without per-segment
 # confidences, so silence-hallucinations ("Dekuji." into a pause) survive the
 # logprob filter. Their giveaway is loudness: they sit far below the level of
 # anything actually spoken into the microphone. The thresholds are deliberately

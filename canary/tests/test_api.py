@@ -74,7 +74,7 @@ async def test_transcription_returns_verbose_json_the_client_can_stitch(monkeypa
         response = await client.post(
             "/v1/audio/transcriptions",
             files={"file": ("chunk.wav", wav_bytes(), "audio/wav")},
-            data={"model": "nemo-canary-1b-v2", "response_format": "verbose_json", "language": "cs"},
+            data={"model": "onnx-community/whisper-large-v3-turbo", "response_format": "verbose_json", "language": "cs"},
         )
 
     assert response.status_code == 200

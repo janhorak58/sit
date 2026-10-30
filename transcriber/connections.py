@@ -46,7 +46,7 @@ LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 # Fallbacks so the panel is never blank: an unset or unparseable environment
 # variable still yields a working port/path/model to edit.
 FALLBACKS = {
-    "transcription": (8208, "/v1/audio/transcriptions", "nemo-canary-1b-v2"),
+    "transcription": (8208, "/v1/audio/transcriptions", "onnx-community/whisper-large-v3-turbo"),
     "diarization": (8299, "/v1/audio/diarizations", ""),
     "llm": (8100, "", "gpt-oss-120b"),
 }
