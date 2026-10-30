@@ -24,6 +24,10 @@ VAD_MODEL = os.environ.get("CANARY_VAD_MODEL", "silero")
 # Canary is an attention encoder-decoder: long windows cost quadratic attention
 # and drift, so VAD cuts speech into windows of at most this many seconds.
 WINDOW_SECONDS = float(os.environ.get("CANARY_WINDOW_SECONDS", "30"))
+# Cut speech only at pauses at least this long. Silero's 100 ms default shreds
+# read Czech into sub-second scraps: on a Hamlet test WER fell from 37 % at
+# 100 ms to 21 % at 1000 ms.
+MIN_SILENCE_MS = float(os.environ.get("CANARY_MIN_SILENCE_MS", "1000"))
 # Windows recognized in one forward pass; raise it to trade VRAM for throughput.
 BATCH_SIZE = int(os.environ.get("CANARY_BATCH_SIZE", "8"))
 DEFAULT_LANGUAGE = os.environ.get("CANARY_DEFAULT_LANGUAGE", "cs")
@@ -77,7 +81,10 @@ def get_model():
             # VAD stays on CPU: milliseconds of work, not worth a second context.
             vad = onnx_asr.load_vad(VAD_MODEL, providers=["CPUExecutionProvider"])
             _model = model.with_vad(
-                vad, max_speech_duration_s=WINDOW_SECONDS, batch_size=BATCH_SIZE
+                vad,
+                max_speech_duration_s=WINDOW_SECONDS,
+                min_silence_duration_ms=MIN_SILENCE_MS,
+                batch_size=BATCH_SIZE,
             )
     return _model
 

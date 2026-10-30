@@ -561,6 +561,7 @@ Everything else belongs in **Connections**.
 | `LOCAL_ASR_DEVICE` | `cpu` | `cpu` or `cuda` (requires `onnxruntime-gpu`) |
 | `LOCAL_ASR_VAD_MODEL` | `silero` | VAD that cuts audio into windows before recognition |
 | `LOCAL_ASR_WINDOW_SECONDS` | `30` | Max window length sent to the model |
+| `LOCAL_ASR_MIN_SILENCE_MS` | `1000` | Shortest pause the VAD cuts at; shorter cuts leave scraps the model misreads |
 | `LOCAL_ASR_DEFAULT_LANGUAGE` | `cs` | Language pinned when a recording carries no explicit one |
 | `MAX_RECORDING_SECONDS` | `10800` | Maximum recording length in seconds |
 

@@ -91,6 +91,7 @@ serves whatever `CANARY_MODEL` it loaded regardless of the requested name.
 | `CANARY_MODEL` | `nemo-canary-1b-v2` | Any `onnx-asr` model name, e.g. `nemo-parakeet-tdt-0.6b-v3` |
 | `CANARY_QUANTIZATION` | empty (float32) | `int8` halves VRAM, costs some accuracy |
 | `CANARY_WINDOW_SECONDS` | `30` | Max speech window sent to the model; Canary drifts on long windows |
+| `CANARY_MIN_SILENCE_MS` | `1000` | Shortest pause the VAD cuts at; shorter cuts leave scraps the model misreads |
 | `CANARY_BATCH_SIZE` | `8` | Windows per forward pass; trades VRAM for throughput |
 | `CANARY_DEFAULT_LANGUAGE` | `cs` | Used when a request omits `language` |
 | `CANARY_DEVICE` | `cuda` | `cpu` is for debugging only |

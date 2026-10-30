@@ -12,6 +12,7 @@ from .config import (
     LOCAL_ASR_MODEL,
     LOCAL_ASR_PATH,
     LOCAL_ASR_QUANTIZATION,
+    LOCAL_ASR_MIN_SILENCE_MS,
     LOCAL_ASR_VAD_MODEL,
     LOCAL_ASR_WINDOW_SECONDS,
 )
@@ -53,7 +54,9 @@ def get_local_asr():
                 # avoids a second device context for a few milliseconds of work.
                 vad = onnx_asr.load_vad(LOCAL_ASR_VAD_MODEL, providers=["CPUExecutionProvider"])
                 _cache["asr"] = model.with_vad(
-                    vad, max_speech_duration_s=LOCAL_ASR_WINDOW_SECONDS
+                    vad,
+                    max_speech_duration_s=LOCAL_ASR_WINDOW_SECONDS,
+                    min_silence_duration_ms=LOCAL_ASR_MIN_SILENCE_MS,
                 )
     return _cache["asr"]
 
