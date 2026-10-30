@@ -1,5 +1,6 @@
 import importlib.util
 import io
+import signal
 import wave
 from pathlib import Path
 from types import SimpleNamespace
@@ -118,3 +119,27 @@ async def test_empty_upload_is_rejected_without_loading_model(monkeypatch, trans
 
     assert response.status_code == 400
     assert response.json() == {"detail": "Audio file is empty"}
+
+
+def test_idle_exit_waits_for_a_loaded_pipeline_and_finished_requests(monkeypatch):
+    clock = [1000.0]
+    signals = []
+    monkeypatch.setattr(diarizer.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(diarizer.os, "kill", lambda pid, sig: signals.append(sig))
+    monkeypatch.setattr(diarizer, "IDLE_EXIT_SECONDS", 60.0)
+
+    # An empty process after a restart must stay up, or it would restart forever.
+    monkeypatch.setattr(diarizer, "_pipeline", None)
+    assert diarizer._idle_seconds() is None
+
+    monkeypatch.setattr(diarizer, "_pipeline", object())
+    with diarizer._activity():
+        clock[0] += 3600
+        # A long request in flight is not idleness, however long it runs.
+        assert diarizer._idle_seconds() is None
+    clock[0] += 59
+    assert diarizer._idle_seconds() == 59
+
+    clock[0] += 1
+    diarizer._exit_when_idle()
+    assert signals == [signal.SIGTERM]
