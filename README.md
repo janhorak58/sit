@@ -39,6 +39,13 @@ has to be put into headset mode in the system sound settings first, because
 doing it silently would drop *both* tracks to narrowband HFP. Bluetooth
 microphones are labelled with that warning in the device list.
 
+A recording started too early or stopped too late can be trimmed in the
+**Transcript** step under **Trim recording**: drag the handles over the loudness
+view, or set the start and end at the player position. The cut replaces the
+saved audio for good. An existing transcript follows it (lines outside the kept
+part are dropped, the rest shift to the new times, speaker names stay), and an
+existing AI analysis is marked outdated.
+
 The FastAPI backend can be opened in a browser or in a native Tauri window.
 Transcription uses a configured private ASR server, falling back to local
 Whisper large-v3-turbo (CPU, ONNX) when it is unavailable — that fallback is part of the

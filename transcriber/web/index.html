@@ -144,6 +144,25 @@
             </div>
             <div id="bar"><div id="fill"></div></div><p class="status-line" id="status">Ready.</p>
             <div class="diarize-action"><div><b>Speaker recognition</b><small>Re-label the finished transcript without running speech recognition again.</small></div><button id="diarize" class="quiet" type="button" disabled>Recognize speakers again</button></div>
+            <details id="trim-panel" class="advanced-options trim-panel"><summary>Trim recording <span>cut off a late start or a forgotten stop</span></summary>
+              <div class="advanced-body">
+                <div id="trim-wave" class="trim-wave" title="Click to play from here">
+                  <div id="trim-bars" class="trim-bars" role="img" aria-label="Recording loudness over time"></div>
+                  <div id="trim-mask-start" class="trim-mask start"></div><div id="trim-mask-end" class="trim-mask end"></div>
+                  <div id="trim-playhead" class="trim-playhead"></div>
+                  <input id="trim-start" class="trim-handle" type="range" min="0" max="1" step="any" value="0" aria-label="Keep from">
+                  <input id="trim-end" class="trim-handle" type="range" min="0" max="1" step="any" value="1" aria-label="Keep until">
+                </div>
+                <audio id="trim-audio" controls preload="metadata"></audio>
+                <div class="trim-controls">
+                  <span>Keep from <b id="trim-start-label">00:00</b></span><button id="trim-set-start" class="small quiet" type="button">Start here</button>
+                  <span>until <b id="trim-end-label">00:00</b></span><button id="trim-set-end" class="small quiet" type="button">End here</button>
+                  <span class="trim-kept">Keeps <b id="trim-kept-label">00:00</b></span>
+                  <button id="trim-apply" class="small primary" type="button" disabled>Trim</button>
+                </div>
+                <p id="trim-status" class="status-line">Drag the handles, or play the recording and set the start and end at the playhead. The transcript and speaker names follow the cut.</p>
+              </div>
+            </details>
             <div id="speaker-names" class="speaker-names" hidden></div>
             <div class="stage-actions"><button id="transcribe" class="primary" type="button">Generate transcript</button><button id="to-summary" class="primary" type="button" disabled>Continue to AI analysis →</button></div>
           </div>
