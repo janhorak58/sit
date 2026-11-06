@@ -593,6 +593,35 @@ def test_browse_reports_segments_and_summary_json_flags(monkeypatch, tmp_path):
     assert items["meeting"]["summary_json"] is True
 
 
+def test_browse_lists_newest_recordings_and_folders_first(monkeypatch, tmp_path):
+    from transcriber import library, paths
+
+    monkeypatch.setattr(library, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(paths, "DATA_DIR", tmp_path)
+    # Creation times by path relative to the library; anything else is "now".
+    made = {
+        "Team/Older": 100, "Team/Older/audio/Older.wav": 105,
+        # Trimmed after the transcript existed: the replaced wav is new, the
+        # transcript still dates the meeting.
+        "Team/Trimmed": 300, "Team/Trimmed/Trimmed.txt": 301, "Team/Trimmed/audio/Trimmed.wav": 900,
+        "Team/loose.txt": 200,
+        "Team/Archive 2024": 50, "Team/Archive 2025": 60,
+    }
+    monkeypatch.setattr(library, "created_at", lambda p: made.get(p.relative_to(tmp_path).as_posix(), 1000))
+    for rel in ("Team/Older/audio/Older.wav", "Team/Trimmed/audio/Trimmed.wav"):
+        (tmp_path / rel).parent.mkdir(parents=True)
+        (tmp_path / rel).write_bytes(b"")
+    (tmp_path / "Team/Trimmed/Trimmed.txt").write_text("hi")
+    (tmp_path / "Team/loose.txt").write_text("hi")
+    (tmp_path / "Team/Archive 2024/old").mkdir(parents=True)
+    (tmp_path / "Team/Archive 2025/old").mkdir(parents=True)
+
+    listing = library.browse("Team")
+
+    assert [item["name"] for item in listing["items"]] == ["Trimmed", "loose", "Older"]
+    assert listing["subfolders"] == ["Archive 2025", "Archive 2024"]
+
+
 def test_move_item_moves_meeting_and_summary_json_sidecars(monkeypatch, tmp_path):
     from transcriber import library, paths
 

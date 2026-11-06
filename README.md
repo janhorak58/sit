@@ -678,6 +678,10 @@ upload.
 or contact a separate helper. Open that data directory directly in your file
 manager when you need to inspect the files.
 
+The library lists meetings and folders newest first. A meeting is dated by
+when its recording started (or its transcript appeared), so trimming or moving
+it later does not reorder the list.
+
 ## Docker (not recommended)
 
 The container exists for a headless server, not for normal use. In a container
