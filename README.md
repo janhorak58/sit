@@ -578,12 +578,48 @@ an empty field keeps it, and "Forget the stored API key" clears it. When the
 server answers 401/403, Service diagnostics says the key was rejected instead
 of reporting the endpoint as running.
 
+Transcription and speaker recognition have the same kind of **API key**
+field. Set it when the service sits behind a gateway such as LiteLLM. SIT then
+sends the key with every upload and with the health probe, and Service
+diagnostics shows whether a key is stored. The HuggingFace token stays
+separate because only the local pyannote fallback uses it.
+
+One LiteLLM proxy can serve all three services. Point each card at it (three
+tunnels with different local ports to the same remote port, for example 8208,
+8299 and 8200 to remote 4000) and enter the key in every card. Set the
+**Model** fields to the names LiteLLM lists in `/v1/models`. LiteLLM has no
+diarization API, so the diarizer goes through a pass-through route, and the
+Pyannote card's **API path** becomes `/diarizer/v1/audio/diarizations`. A
+LiteLLM config for the services in `asr/` and `diarizer/`:
+
+```yaml
+model_list:
+  - model_name: whisper-large-v3-turbo
+    litellm_params:
+      model: openai/whisper-large-v3-turbo
+      api_base: http://<asr-host>:8208/v1
+      api_key: none
+    model_info:
+      mode: audio_transcription
+general_settings:
+  pass_through_endpoints:
+    - path: /diarizer
+      target: http://<diarizer-host>:8299
+      include_subpath: true
+      timeout: 3600
+```
+
+Both services bind to `127.0.0.1` by default. When LiteLLM runs in a Docker
+container on the same host, set `ASR_BIND` or `DIARIZER_BIND` to the
+`docker0` address (usually `172.17.0.1`) and use it as the host above. On
+another machine, bind to an address that machine can reach.
+
 Local pyannote needs you to accept the model terms at
 [speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) and
 [segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0).
 The remote model servers are not part of the running desktop app; the
 diarization service is documented at [diarizer/README.md](diarizer/README.md),
-and the ASR service at [canary/README.md](canary/README.md).
+and the ASR service at [asr/README.md](asr/README.md).
 
 The desktop launcher sets `TRANSCRIBER_PROJECT_DIR` and `TRANSCRIBER_PYTHON`
 to absolute paths. When running the binary yourself, set them in the

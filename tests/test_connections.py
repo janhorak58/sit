@@ -335,22 +335,30 @@ def test_hf_token_is_write_only_kept_on_save_and_cleared_on_request(monkeypatch,
     assert connections.public_connections()["diarization"]["hf_token_set"] is False
 
 
-def test_llm_api_key_is_write_only_kept_on_save_and_cleared_on_request(monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    ("name", "other"), [("llm", "transcription"), ("transcription", "diarization"), ("diarization", "llm")]
+)
+def test_api_key_is_write_only_kept_on_save_and_cleared_on_request(monkeypatch, tmp_path, name, other):
     monkeypatch.setattr(connections, "CONNECTIONS_PATH", tmp_path / "connections.json")
     monkeypatch.setattr(connections, "_cached", None)
 
-    connections.save_connections({"ssh": {"enabled": False}, "llm": {"api_key": "sk-secret"}})
-    assert connections.get_connection("llm")["api_key"] == "sk-secret"
+    connections.save_connections(
+        {"ssh": {"enabled": False}, name: {"api_key": "sk-secret"}, other: {"api_key": "sk-other"}}
+    )
+    assert connections.get_connection(name)["api_key"] == "sk-secret"
 
     public = connections.public_connections()
-    assert "api_key" not in public["llm"]
-    assert public["llm"]["api_key_set"] is True
+    assert "api_key" not in public[name]
+    assert public[name]["api_key_set"] is True
 
     # A form round-trip carries an empty field back; the key must survive it.
-    public["llm"]["api_key"] = ""
+    public[name]["api_key"] = ""
+    public[other]["api_key"] = ""
     connections.save_connections(public)
-    assert connections.get_connection("llm")["api_key"] == "sk-secret"
+    assert connections.get_connection(name)["api_key"] == "sk-secret"
 
-    connections.save_connections({**public, "forget_llm_api_key": True})
-    assert connections.get_connection("llm")["api_key"] == ""
-    assert connections.public_connections()["llm"]["api_key_set"] is False
+    # Forgetting one service's key leaves the other one stored.
+    connections.save_connections({**public, f"forget_{name}_api_key": True})
+    assert connections.get_connection(name)["api_key"] == ""
+    assert connections.public_connections()[name]["api_key_set"] is False
+    assert connections.get_connection(other)["api_key"] == "sk-other"

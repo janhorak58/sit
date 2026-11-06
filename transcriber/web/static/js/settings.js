@@ -75,24 +75,28 @@ function showEndpoints(endpoints) {
 
 // The backend never sends stored secrets back, so an untouched field means
 // "keep what is stored"; clearing one needs its explicit checkbox.
+const API_KEY_SERVICES = ['transcription', 'diarization', 'llm'];
+
 function showSecrets(connections) {
   $('hf-token-state').textContent = connections?.diarization?.hf_token_set
     ? 'A token is stored. Type a new one to replace it.'
     : 'No token stored. The local pyannote fallback needs one for gated models.';
-  $('llm-api-key-state').textContent = connections?.llm?.api_key_set
-    ? 'A key is stored. Type a new one to replace it.'
-    : 'No key stored. Set one if the server answers 401 Unauthorized.';
+  API_KEY_SERVICES.forEach(name => {
+    $(`${name}-api-key-state`).textContent = connections?.[name]?.api_key_set
+      ? 'A key is stored. Type a new one to replace it.'
+      : 'No key stored. Set one if the server or a gateway such as LiteLLM answers 401 Unauthorized.';
+    $(`forget-${name}-api-key`).checked = false;
+  });
   document.querySelectorAll('#connections-form [data-connection-secret]').forEach(field => {
     field.value = '';
   });
   $('forget-hf-token').checked = false;
-  $('forget-llm-api-key').checked = false;
 }
 
 function readConnectionForm() {
   const next = currentConnections ? structuredClone(currentConnections) : {};
   delete next.diarization?.hf_token_set;
-  delete next.llm?.api_key_set;
+  API_KEY_SERVICES.forEach(name => delete next[name]?.api_key_set);
   document.querySelectorAll('#connections-form [data-connection-path]').forEach(field => {
     at(next, field.dataset.connectionPath, field.type === 'checkbox' ? field.checked : field.value);
   });
@@ -100,7 +104,9 @@ function readConnectionForm() {
     at(next, field.dataset.connectionSecret, field.value.trim());
   });
   next.forget_hf_token = $('forget-hf-token').checked;
-  next.forget_llm_api_key = $('forget-llm-api-key').checked;
+  API_KEY_SERVICES.forEach(name => {
+    next[`forget_${name}_api_key`] = $(`forget-${name}-api-key`).checked;
+  });
   return next;
 }
 
@@ -158,6 +164,7 @@ async function loadDiagnostics() {
       row('Status', ok ? 'Working — using the remote engine' : 'Unavailable — using the engine on this computer', ok ? 'ok' : 'bad'),
       row('Address', remote.url),
       row('Model', remote.model),
+      row('API key', remote.api_key ? 'Saved' : 'Not set'),
       row('Server has this model', remote.probe && remote.probe.available ? 'Yes' : 'Could not confirm', remote.probe && remote.probe.available ? 'ok' : 'bad'),
       row('Connection test', upload.detail),
       row('Last error', remote.last_error),
@@ -182,6 +189,7 @@ async function loadDiagnostics() {
         diarization.hf_token ? 'Saved' : 'Not set',
         diarization.hf_token ? 'ok' : 'bad',
       ),
+      row('API key for remote engine', diarization.api_key ? 'Saved' : 'Not set'),
       ...(diarizationRemote.last_error ? [el('p', {
         className: 'sethint',
         textContent: '→ Remote speaker recognition: ' + diarizationRemote.last_error,
