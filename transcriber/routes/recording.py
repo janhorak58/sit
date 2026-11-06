@@ -9,25 +9,50 @@ from ..live import live
 from ..paths import rel_to_data
 from ..recorder import capture_levels, microphones, outputs, recorder
 from ..schemas import StartReq, StopReq
+from .. import screen
 
 router = APIRouter()
 _lifecycle_lock = threading.Lock()
 
 # The watchdog auto-stop has no HTTP route to hang a callback off; wire it
 # here so an auto-stopped capture still tells the live worker to stop
-# scheduling new windows (drafts already produced remain available).
-recorder.on_stop = live.stop_listening
+# scheduling new windows (drafts already produced remain available), and
+# ends the screen video together with the audio.
+def _on_recorder_stop():
+    live.stop_listening()
+    screen.stop()
+
+
+recorder.on_stop = _on_recorder_stop
 
 
 @router.get("/recording/devices")
 def devices():
-    return {"microphones": microphones(), "outputs": outputs()}
+    return {"microphones": microphones(), "outputs": outputs(), "screen": screen.available()}
 
 
 @router.post("/start")
 def start(req: StartReq | None = None):
     with _lifecycle_lock:
-        recorder.start(req.microphone if req else "", req.output if req else "")
+        wants_screen = bool(req and req.screen)
+        # Before the audio starts: the user may take a while in the picker.
+        if wants_screen:
+            screen.choose()
+        else:
+            screen.forget_leftovers()
+        try:
+            recorder.start(req.microphone if req else "", req.output if req else "")
+        except Exception:
+            if wants_screen:
+                screen.discard()
+            raise
+        if wants_screen:
+            try:
+                screen.begin(recorder.started_at)
+            except AppError:
+                recorder.stop()
+                WAV_PATH.unlink(missing_ok=True)
+                raise
         live.start(
             recorder.wav_path, (req.language if req else "cs") or "",
             enabled=req.live if req else True,
@@ -41,6 +66,7 @@ def cancel():
     with _lifecycle_lock:
         recorder.stop()
         live.cancel()
+        screen.discard()
         WAV_PATH.unlink(missing_ok=True)
         return {"ok": True}
 

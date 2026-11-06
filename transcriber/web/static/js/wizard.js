@@ -12,6 +12,8 @@ let suggestedFolder = '';
 let unlockedStep = 1;
 let suggestionRequest = 0;
 let summaryTimer = null;
+// Offered only where the desktop can share its screen (see /recording/devices).
+let screenAvailable = false;
 
 function go(step) {
   if (step > unlockedStep) return;
@@ -40,6 +42,7 @@ function setSourceState(hasRecording) {
   $('record-microphone-field').hidden = hideStarters;
   $('record-output-field').hidden = hideStarters;
   $('live-toggle-field').hidden = hideStarters;
+  $('screen-toggle-field').hidden = hideStarters || !screenAvailable;
 }
 
 function setTranscriptActions(hasTranscript) {
@@ -224,6 +227,8 @@ async function refreshMicrophones() {
   const microphone = $('record-microphone').value || preferences.microphone || '';
   const output = $('record-output').value || preferences.output || '';
   const result = await api.recordingDevices();
+  screenAvailable = result.screen === true;
+  setSourceState(Boolean(state.workspace?.path));
   $('device-error').hidden = !result.error;
   $('device-error').textContent = result.error ? 'Could not list audio devices: ' + result.error : '';
   fillDevices($('record-microphone'), result.error ? [] : result.microphones || [], 'System default', microphone, microphoneLabel);
@@ -344,6 +349,7 @@ function resetWorkspaceView() {
   $('fill').style.width = '0%';
   $('record-lang').disabled = false;
   $('live-toggle').disabled = false;
+  $('screen-toggle').disabled = false;
   $('record-microphone').disabled = false;
   $('record-output').disabled = false;
   applyPreferences();
@@ -467,6 +473,7 @@ function syncRecordingPanel() {
   $('start').disabled = pending;
   $('record-lang').disabled = pending;
   $('live-toggle').disabled = pending;
+  $('screen-toggle').disabled = pending;
   $('record-output').disabled = pending;
   if (pending) {
     $('record-toolbar-label').textContent = !recording.active
@@ -581,10 +588,14 @@ export function initWizard() {
   $('to-transcript').onclick = () => go(2);
   $('start').onclick = async () => {
     $('start').disabled = true;
+    const screen = screenAvailable && $('screen-toggle').checked;
+    const ready = $('source-status').textContent;
+    if (screen) $('source-status').textContent = 'Choose the screen or window to record in the desktop dialog…';
     const result = await api.startRecording(
       $('record-lang').value, $('live-toggle').checked,
-      $('record-microphone').value, $('record-output').value,
+      $('record-microphone').value, $('record-output').value, screen,
     );
+    $('source-status').textContent = ready;
     if (result.error) { $('start').disabled = false; alert('Error: ' + result.error); return; }
     setRecording(true, Date.now(), result.system_audio !== false);
   };

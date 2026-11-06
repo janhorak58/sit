@@ -10,6 +10,8 @@ class StartReq(BaseModel):
     microphone: str = ""
     # Sink whose monitor is recorded as the system-audio track; "" = default sink.
     output: str = ""
+    # Also record a monitor or window, picked in the desktop's sharing dialog.
+    screen: bool = False
 
 
 class StopReq(BaseModel):

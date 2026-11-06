@@ -19,7 +19,7 @@ async function get(url) {
   return body(await fetch(url));
 }
 
-export const startRecording = (language, live, microphone = '', output = '') => post('/start', {language, live, microphone, output});
+export const startRecording = (language, live, microphone = '', output = '', screen = false) => post('/start', {language, live, microphone, output, screen});
 export const recordingStatus = () => get('/recording/status');
 export const recordingDevices = () => get('/recording/devices');
 export const stopRecording = (folder, filename) => post('/stop', {folder, filename});
@@ -72,3 +72,4 @@ export const recordingLevels = path => get('/library/levels?path=' + encodeURICo
 export const trimRecording = (path, start, end) => post('/library/trim', {path, start, end});
 
 export const audioUrl = path => '/library/audio?path=' + encodeURIComponent(path);
+export const screenInfo = path => get('/library/screen?path=' + encodeURIComponent(path));

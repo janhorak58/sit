@@ -16,6 +16,8 @@ import numpy as np
 
 from .config import AUDIO_SUBDIR, DATA_DIR, INTERNAL_TOP_DIRS
 from .errors import AppError
+from . import screen
+from .screen import screen_path_for
 from .paths import (
     rel_to_data,
     resolve_in_data,
@@ -154,6 +156,8 @@ def delete_file(path):
         target.with_name(f"{target.name[:-len('.summary.md')]}.summary.json").unlink(missing_ok=True)
     elif target.suffix == ".txt":
         meeting_json_path_for(target).unlink(missing_ok=True)
+    if target.suffix == ".wav":
+        screen_path_for(target).unlink(missing_ok=True)
     holder = target.parent.parent if target.parent.name == AUDIO_SUBDIR else target.parent
     _prune_recording_folder(holder)
 
@@ -194,6 +198,7 @@ def store_recording(source_wav, folder, filename):
     if target_file.exists():
         raise AppError("target audio already exists")
     source_wav.rename(target_file)
+    screen.store(target_file)
     return target_file
 
 
@@ -329,6 +334,12 @@ def _library_wav(path):
     return target
 
 
+def screen_video(path):
+    """The screen video recorded together with a library wav, or None."""
+    video = screen_path_for(_library_wav(path))
+    return video if video.is_file() else None
+
+
 def recording_levels(path):
     """Loudness over time, one 0..1 value per bucket, for the trim view.
 
@@ -408,7 +419,9 @@ def trim_recording(path, start, end):
         meeting["analysis_stale"] = True
         atomic_write_text(meeting_path, json.dumps(meeting, ensure_ascii=False, indent=2))
         txt_path.write_text(_render_segments_text(segments))
-    return {"duration": kept, "transcript_shifted": meeting is not None}
+    # Last, so a video that cannot follow still leaves audio and transcript in step.
+    screen_kept = screen.trim(screen_path_for(wav), offset, offset + kept)
+    return {"duration": kept, "transcript_shifted": meeting is not None, "screen_kept": screen_kept}
 
 
 
@@ -436,6 +449,10 @@ def move_item(folder, name, to_folder, to_name, wav_path=None):
 
     if not moves:
         raise AppError("item not found")
+    if wav_path:
+        video = screen_path_for(resolve_in_data(wav_path))
+        if video.is_file():
+            moves.append((video, screen_path_for(dst_dir / AUDIO_SUBDIR / f"{to_name}.wav"), "screen"))
     if any(destination.exists() for _, destination, _ in moves):
         raise AppError("destination item already exists")
     # Classified before the rename: afterwards the folder no longer matches

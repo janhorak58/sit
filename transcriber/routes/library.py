@@ -9,6 +9,7 @@ from ..errors import AppError
 from ..paths import resolve_in_data
 from ..pdf_export import render_summary_pdf
 from ..progress import progress
+from ..screen import describe as describe_screen
 from ..schemas import (
     DeleteReq,
     FolderRenameReq,
@@ -93,6 +94,26 @@ def audio(path: str):
 @router.get("/library/levels")
 def levels(path: str):
     return library.recording_levels(path)
+
+
+@router.get("/library/screen")
+def screen_info(path: str):
+    """Where the meeting's screen video plays and how it lines up with the audio."""
+    video = library.screen_video(path)
+    if video is None:
+        return {"url": None}
+    lead, duration = describe_screen(video)
+    return {"url": f"/library/screen-video?path={quote(path)}", "offset": lead, "duration": duration}
+
+
+@router.get("/library/screen-video")
+def screen_file(path: str):
+    video = library.screen_video(path)
+    if video is None:
+        raise AppError("Screen video not found.")
+    # Trimming rewrites the file in place, so the player must revalidate.
+    return FileResponse(video, media_type="video/webm", headers={"Cache-Control": "no-cache"})
+
 
 
 @router.post("/library/trim")

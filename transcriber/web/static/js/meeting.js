@@ -4,6 +4,7 @@ import {showView} from './views.js';
 import {getPreferences} from './customizations.js';
 import {speakerNameEditor} from './speakers.js';
 import {forgetRecentPath} from './library.js';
+import {clearScreen, loadScreen} from './screen-player.js';
 
 let segRows = [];
 let meetingState = null;
@@ -577,6 +578,7 @@ export async function openMeeting(path, wavPath, title) {
   const audio = $('meeting-audio');
   $('meeting-title').textContent = title;
   audio.src = wavPath ? api.audioUrl(wavPath) : '';
+  loadScreen(wavPath);
   audio.ontimeupdate = () => highlightActive(audio);
   const [meeting, summary] = await Promise.all([api.readMeeting(path), api.readSummaryJson(path)]);
   if (meeting.error) {
@@ -610,6 +612,7 @@ export function closeMeeting() {
   syncElapsedTimer(false);
   $('meeting-audio').pause();
   $('meeting-audio').removeAttribute('src');
+  clearScreen();
   $('meeting-artifact-dialog').close();
   meetingState = null;
   $('meeting-body').replaceChildren();
