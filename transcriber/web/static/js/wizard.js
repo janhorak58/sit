@@ -242,7 +242,7 @@ function chosenProject() {
 }
 
 function safeSegment(value) {
-  return value.trim().replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ');
+  return value.trim().replace(/[\\/:*?"<>|]/g, '-');
 }
 
 async function updateSuggestion() {
@@ -551,16 +551,14 @@ export function initWizard() {
       alert('A recording with this name already exists in the project. Choose a different name, or open it in the library.');
       return;
     }
-    const result = await api.mkdir(folder);
     $('create-workspace').disabled = false;
-    if (result.error) { alert('Error: ' + result.error); return; }
-    setWorkspace({project, folder: result.folder || folder, name});
+    // The folder appears when audio is saved into it, so a take that is
+    // cancelled or never started leaves no empty folder behind.
+    setWorkspace({project, folder, name});
     resetWorkspaceView();
     $('workspace-title').textContent = name;
-    $('workspace-path').textContent = result.folder || folder;
+    $('workspace-path').textContent = folder;
     location.hash = '#workspace';
-    window.dispatchEvent(new Event('transcriber:library-changed'));
-    refreshProjects();
   };
 
   $('workspace-rename').onclick = () => {

@@ -682,6 +682,11 @@ The library lists meetings and folders newest first. A meeting is dated by
 when its recording started (or its transcript appeared), so trimming or moving
 it later does not reorder the list.
 
+Every meeting is saved in its own folder named after it, with the same name
+on its files. The library shows such a folder as the meeting itself, so one
+click opens it. The folder is created when the audio is saved, so a cancelled
+take leaves nothing behind.
+
 ## Docker (not recommended)
 
 The container exists for a headless server, not for normal use. In a container

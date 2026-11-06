@@ -84,6 +84,17 @@ def _visible_subfolders(target):
     )
 
 
+def _same_recording_name(folder_name, item_name):
+    """Whether ``folder_name`` is the folder the UI made for ``item_name``.
+
+    Before both used "-", the file got "_" where the folder name got "-" for
+    characters like "/" and ":", and the folder collapsed runs of spaces.
+    """
+    def canonical(name):
+        return " ".join(name.replace("_", "-").split())
+    return canonical(folder_name) == canonical(item_name)
+
+
 def is_recording_folder(path):
     """True for a folder that is only the container of the recording it is named after.
 
@@ -95,7 +106,7 @@ def is_recording_folder(path):
     if not path.is_dir() or _visible_subfolders(path):
         return False
     items = _items_in(path, "")
-    return len(items) == 1 and items[0]["name"] == path.name
+    return len(items) == 1 and _same_recording_name(path.name, items[0]["name"])
 
 
 def browse(rel_folder):
@@ -472,7 +483,7 @@ def move_item(folder, name, to_folder, to_name, wav_path=None):
         raise AppError("destination item already exists")
     # Classified before the rename: afterwards the folder no longer matches
     # the name it wrapped, so it would never look like a recording folder.
-    wraps_this_item = src_dir.name == name and is_recording_folder(src_dir)
+    wraps_this_item = _same_recording_name(src_dir.name, name) and is_recording_folder(src_dir)
     for _, destination, _ in moves:
         destination.parent.mkdir(parents=True, exist_ok=True)
     for source, destination, _ in moves:
