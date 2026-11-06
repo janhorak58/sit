@@ -583,7 +583,7 @@ Local pyannote needs you to accept the model terms at
 [segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0).
 The remote model servers are not part of the running desktop app; the
 diarization service is documented at [diarizer/README.md](diarizer/README.md),
-and the ASR service at [canary/README.md](canary/README.md).
+and the ASR service at [asr/README.md](asr/README.md).
 
 The desktop launcher sets `TRANSCRIBER_PROJECT_DIR` and `TRANSCRIBER_PYTHON`
 to absolute paths. When running the binary yourself, set them in the

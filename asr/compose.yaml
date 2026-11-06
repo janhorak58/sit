@@ -1,0 +1,32 @@
+# Separate project from diarizer/: same-named projects treat each other's
+# containers as orphans.
+name: transcriber-asr
+
+services:
+  asr:
+    build:
+      context: .
+    image: transcriber-asr:local
+    restart: unless-stopped
+    ports:
+      - "${ASR_BIND:-127.0.0.1}:${ASR_PORT:-8208}:8000"
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      ASR_MODEL: ${ASR_MODEL:-onnx-community/whisper-large-v3-turbo}
+      ASR_DEVICE: ${ASR_DEVICE:-cuda}
+      ASR_QUANTIZATION: ${ASR_QUANTIZATION:-}
+      ASR_VAD_MODEL: ${ASR_VAD_MODEL:-silero}
+      ASR_WINDOW_SECONDS: ${ASR_WINDOW_SECONDS:-30}
+      ASR_MIN_SILENCE_MS: ${ASR_MIN_SILENCE_MS:-1000}
+      ASR_BATCH_SIZE: ${ASR_BATCH_SIZE:-8}
+      ASR_DEFAULT_LANGUAGE: ${ASR_DEFAULT_LANGUAGE:-cs}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-2147483648}
+      PRELOAD_MODEL: ${PRELOAD_MODEL:-1}
+      IDLE_EXIT_SECONDS: ${IDLE_EXIT_SECONDS:-900}
+    volumes:
+      - huggingface-cache:/models/huggingface
+    gpus: all
+    shm_size: "1gb"
+
+volumes:
+  huggingface-cache:

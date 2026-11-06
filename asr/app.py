@@ -19,21 +19,21 @@ from pathlib import Path
 from anyio import to_thread
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 
-MODEL_ID = os.environ.get("CANARY_MODEL", "onnx-community/whisper-large-v3-turbo")
+MODEL_ID = os.environ.get("ASR_MODEL", "onnx-community/whisper-large-v3-turbo")
 # Empty = full precision. int8 halves VRAM at a small accuracy cost.
-QUANTIZATION = os.environ.get("CANARY_QUANTIZATION", "")
-DEVICE = os.environ.get("CANARY_DEVICE", "cuda")
-VAD_MODEL = os.environ.get("CANARY_VAD_MODEL", "silero")
+QUANTIZATION = os.environ.get("ASR_QUANTIZATION", "")
+DEVICE = os.environ.get("ASR_DEVICE", "cuda")
+VAD_MODEL = os.environ.get("ASR_VAD_MODEL", "silero")
 # Whisper reads at most 30 s per pass and attention decoding drifts on long
 # windows, so VAD cuts speech into windows of at most this many seconds.
-WINDOW_SECONDS = float(os.environ.get("CANARY_WINDOW_SECONDS", "30"))
+WINDOW_SECONDS = float(os.environ.get("ASR_WINDOW_SECONDS", "30"))
 # Cut speech only at pauses at least this long. Silero's 100 ms default shreds
 # read Czech into sub-second scraps: on a Hamlet test WER fell from 37 % at
 # 100 ms to 21 % at 1000 ms.
-MIN_SILENCE_MS = float(os.environ.get("CANARY_MIN_SILENCE_MS", "1000"))
+MIN_SILENCE_MS = float(os.environ.get("ASR_MIN_SILENCE_MS", "1000"))
 # Windows recognized in one forward pass; raise it to trade VRAM for throughput.
-BATCH_SIZE = int(os.environ.get("CANARY_BATCH_SIZE", "8"))
-DEFAULT_LANGUAGE = os.environ.get("CANARY_DEFAULT_LANGUAGE", "cs")
+BATCH_SIZE = int(os.environ.get("ASR_BATCH_SIZE", "8"))
+DEFAULT_LANGUAGE = os.environ.get("ASR_DEFAULT_LANGUAGE", "cs")
 PRELOAD_MODEL = os.environ.get("PRELOAD_MODEL", "1").lower() not in {"0", "false", "no"}
 # Exit once the loaded model has gone this many seconds without a request, so
 # its GPU memory goes back to the host between meetings. Only process exit
@@ -106,7 +106,7 @@ def get_model():
             providers = _PROVIDERS.get(DEVICE.lower())
             if providers is None:
                 raise RuntimeError(
-                    f"CANARY_DEVICE={DEVICE!r} is not supported; "
+                    f"ASR_DEVICE={DEVICE!r} is not supported; "
                     f"use {' or '.join(sorted(_PROVIDERS))}"
                 )
             model = onnx_asr.load_model(
@@ -123,7 +123,7 @@ def get_model():
                     "CUDAExecutionProvider" in session.get_providers() for session in sessions
                 ):
                     raise RuntimeError(
-                        "CANARY_DEVICE requests CUDA, but ONNX Runtime fell back to CPU; "
+                        "ASR_DEVICE requests CUDA, but ONNX Runtime fell back to CPU; "
                         "install onnxruntime-gpu matching the container's CUDA/cuDNN"
                     )
             # VAD stays on CPU: milliseconds of work, not worth a second context.

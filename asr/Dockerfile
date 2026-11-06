@@ -3,8 +3,8 @@ FROM ${BASE_IMAGE}
 
 ENV PYTHONUNBUFFERED=1 \
     HF_HOME=/models/huggingface \
-    CANARY_MODEL=onnx-community/whisper-large-v3-turbo \
-    CANARY_DEVICE=cuda
+    ASR_MODEL=onnx-community/whisper-large-v3-turbo \
+    ASR_DEVICE=cuda
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv ffmpeg curl \

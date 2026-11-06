@@ -1,4 +1,4 @@
-# Runtime closure for the Canary ONNX service. onnxruntime-gpu must match the
+# Runtime closure for the ASR ONNX service. onnxruntime-gpu must match the
 # base image's CUDA / cuDNN libraries; changing the image means rechecking
 # https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html
 # 1.29 links CUDA 13 / cuDNN 9 and is the only release with a linux aarch64 GPU
