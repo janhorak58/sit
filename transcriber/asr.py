@@ -1,8 +1,8 @@
 """Speech-to-text backend selection.
 
 The work Spark endpoint is OpenAI-compatible. A fast probe decides whether to
-send the audio there, as 15-minute 32 kbps mp3 chunks (the endpoint caps upload
-size). Any probe or transcription failure falls back to the local Whisper
+send the audio there, as 15-minute lossless FLAC chunks (the endpoint caps
+upload size). Any probe or transcription failure falls back to the local Whisper
 model; an unavailable work endpoint never blocks transcription.
 """
 import array
@@ -105,21 +105,23 @@ def _model_audio(wav_path):
         yield enhanced
 
 
-# 15 min of 32 kbps mono mp3 is ~3.5 MB, comfortably under the remote's
-# per-file size limit whatever a meeting's real length turns out to be.
+# Lossless on purpose: 32 kbps mp3 cut the 7-8 kHz band where Czech sibilants
+# live and changed the transcript of the same meeting audibly, down to stock
+# Whisper hallucinations. 15 min of 16 kHz mono FLAC is ~10-16 MB, still under
+# the remote's per-file size limit whatever a meeting's real length turns out to be.
 CHUNK_SECONDS = 900
-def _mp3_chunks(wav_path, out_dir):
-    """Split+compress the wav into upload-sized mp3 slices, in order."""
+def _flac_chunks(wav_path, out_dir):
+    """Split the wav into upload-sized lossless FLAC slices, in order."""
     subprocess.run(
         [
             "ffmpeg", "-y", "-i", str(wav_path), "-vn", "-ac", "1",
-            "-c:a", "libmp3lame", "-b:a", "32k",
+            "-c:a", "flac",
             "-f", "segment", "-segment_time", str(CHUNK_SECONDS), "-reset_timestamps", "1",
-            str(Path(out_dir) / "part%04d.mp3"),
+            str(Path(out_dir) / "part%04d.flac"),
         ],
         check=True, capture_output=True, text=True,
     )
-    return sorted(Path(out_dir).glob("part*.mp3"))
+    return sorted(Path(out_dir).glob("part*.flac"))
 
 
 # Whisper-style decoders fill silence with short stock phrases ("Thank you.",
@@ -140,10 +142,10 @@ def _is_hallucination(raw):
     return float(no_speech) > NO_SPEECH_PROB_MAX and float(avg_logprob) < AVG_LOGPROB_MIN
 
 
-def _post_audio(path, language, timeout=3600.0, mime="audio/mpeg"):
+def _post_audio(path, language, timeout=3600.0, mime="audio/flac"):
     """One chunk -> (segments, duration), both relative to the chunk's own start.
 
-    ``mime`` matches whatever bytes ``path`` actually holds: mp3 for batch
+    ``mime`` matches whatever bytes ``path`` actually holds: FLAC for batch
     chunks, wav for a live-draft window posted straight through with no
     ffmpeg transcode.
     """
@@ -182,13 +184,13 @@ def _remote_transcribe(wav_path, language, on_segment, timeout=3600.0):
     """Chunked remote transcription; segment times are stitched back together.
 
     Chunk offsets come from the segmenter's own grid, not from the durations
-    the endpoint reports: mp3 encoder padding plus rounded ``duration`` values
-    accumulate into a drift of seconds over a long meeting, which then shifts
+    the endpoint reports: rounded ``duration`` values accumulate into a drift
+    of seconds over a long meeting, which then shifts
     every speaker label assigned against the (undrifted) diarization timeline.
     """
     segments = []
     with tempfile.TemporaryDirectory() as tmp:
-        chunks = _mp3_chunks(wav_path, tmp)
+        chunks = _flac_chunks(wav_path, tmp)
         total = len(chunks) * CHUNK_SECONDS  # only drives the progress bar
         duration = 0.0
         for index, chunk in enumerate(chunks):
@@ -472,10 +474,10 @@ def diagnose():
         return report
     try:
         with tempfile.TemporaryDirectory() as tmp:
-            probe = Path(tmp) / "probe.mp3"
+            probe = Path(tmp) / "probe.flac"
             subprocess.run(
                 ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
-                 "-ac", "1", "-c:a", "libmp3lame", "-b:a", "32k", str(probe)],
+                 "-ac", "1", "-ar", "16000", "-c:a", "flac", str(probe)],
                 check=True, capture_output=True,
             )
             segments, _ = _post_audio(probe, "cs")
