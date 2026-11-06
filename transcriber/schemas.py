@@ -49,6 +49,12 @@ class DeleteReq(BaseModel):
     path: str
 
 
+class TrimReq(BaseModel):
+    path: str
+    start: float
+    end: float
+
+
 class SuggestReq(BaseModel):
     project: str
 

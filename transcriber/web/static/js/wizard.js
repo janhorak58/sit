@@ -6,6 +6,7 @@ import {transcribePath, watchProgress} from './transcribe.js';
 import {getPreferences} from './customizations.js';
 import {speakerNameEditor} from './speakers.js';
 import {openMeeting} from './meeting.js';
+import {initTrim, resetTrim} from './trim.js';
 
 let suggestedFolder = '';
 let unlockedStep = 1;
@@ -266,6 +267,7 @@ function applyWorkspace() {
   $('stored-path').textContent = workspace.path ? `Saved as ${workspace.path}.` : 'The recording will be saved into this folder.';
   setSourceState(Boolean(workspace.path));
   setTranscriptActions(Boolean(workspace.transcriptPath));
+  resetTrim();
   if (workspace.transcriptPath) refreshOutputs();
   unlockedStep = workspace.transcriptPath ? 3 : workspace.path ? 2 : 1;
   go(unlockedStep);
@@ -347,6 +349,7 @@ function resetWorkspaceView() {
   applyPreferences();
   setSourceState(false);
   setTranscriptActions(false);
+  resetTrim();
   go(1);
 }
 
@@ -354,6 +357,7 @@ function stored(path) {
   updateWorkspacePaths(path, null);
   setSourceState(true);
   setTranscriptActions(false);
+  resetTrim();
   $('stored-path').textContent = `Saved as ${path}.`;
   unlockThrough(2);
   go(2);
@@ -510,6 +514,7 @@ export function initWizard() {
   window.addEventListener('transcriber:preferences-changed', applyPreferences);
   refreshProjects();
   refreshMicrophones();
+  initTrim();
   applyWorkspace();
   $('live-draft-segments').addEventListener('scroll', () => {
     const wrap = $('live-draft-segments');
@@ -635,6 +640,7 @@ export function initWizard() {
     openMeeting(workspace.transcriptPath, workspace.path, workspace.name);
   };
   window.addEventListener('transcriber:transcribe-done', event => transcriptionDone(event.detail));
+  window.addEventListener('transcriber:recording-trimmed', () => { if (state.transcriptPath) refreshOutputs(); });
   window.addEventListener('transcriber:transcribe-start', async event => {
     const detail = typeof event.detail === 'string' ? {path: event.detail} : event.detail;
     workspaceFromPath(detail.path, detail.title, detail.hasTranscript);

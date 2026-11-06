@@ -6,9 +6,13 @@ Layout: transcripts live at ``<folder>/<name>.txt``, audio at
 
 from datetime import datetime
 import json
+import math
 import os
 from pathlib import Path
 import shutil
+import wave
+
+import numpy as np
 
 from .config import AUDIO_SUBDIR, DATA_DIR, INTERNAL_TOP_DIRS
 from .errors import AppError
@@ -310,6 +314,101 @@ def rename_speakers(path, names):
         atomic_write_text(meeting_path, json.dumps(data, ensure_ascii=False, indent=2))
         txt_path.write_text(_render_segments_text(segments))
     return {"segments": segments, "renamed": renamed}
+
+
+# The trim view draws loudness on a dB scale, so quiet speech stays visible.
+LEVEL_FLOOR_DB = -60.0
+LEVEL_BUCKETS = 600
+TRIM_MIN_SECONDS = 1.0
+
+
+def _library_wav(path):
+    target = resolve_in_data(path)
+    if target is None or not target.is_file() or target.suffix.lower() != ".wav":
+        raise AppError("Recording not found.")
+    return target
+
+
+def recording_levels(path):
+    """Loudness over time, one 0..1 value per bucket, for the trim view.
+
+    The louder channel wins, so a remote voice on the system track shows as
+    clearly as someone speaking in the room."""
+    wav = _library_wav(path)
+    with wave.open(str(wav), "rb") as handle:
+        if handle.getsampwidth() != 2:
+            raise AppError("This recording's audio format cannot be trimmed.")
+        rate, channels, frames = handle.getframerate(), handle.getnchannels(), handle.getnframes()
+        per_bucket = max(1, -(-frames // LEVEL_BUCKETS))
+        levels = []
+        while chunk := handle.readframes(per_bucket):
+            samples = np.frombuffer(chunk, dtype="<i2").reshape(-1, channels).astype(np.float32)
+            rms = float(np.sqrt(np.mean(samples * samples, axis=0)).max()) / 32768
+            db = 20 * math.log10(rms + 1e-9)
+            levels.append(round(min(1.0, max(0.0, 1 - db / LEVEL_FLOOR_DB)), 3))
+    return {"duration": frames / rate, "levels": levels}
+
+
+def _copy_frames(source, out_path, first, last):
+    """Write frames ``first..last`` of an open wav to a new file, in chunks."""
+    params = source.getparams()
+    source.setpos(first)
+    with wave.open(str(out_path), "wb") as out:
+        out.setparams(params)
+        remaining = last - first
+        while remaining:
+            chunk = source.readframes(min(remaining, params.framerate * 60))
+            if not chunk:
+                break
+            out.writeframes(chunk)
+            remaining -= len(chunk) // (params.sampwidth * params.nchannels)
+
+
+def trim_recording(path, start, end):
+    """Cut a recording down to ``start..end`` seconds, in place.
+
+    An existing transcript follows the cut: cues centred outside the kept
+    range go, the rest shift to the new zero. Speaker names and manual edits
+    survive without transcribing again. The AI analysis is marked outdated."""
+    wav = _library_wav(path)
+    txt_path = transcript_path_for(wav)
+    meeting_path = meeting_json_path_for(txt_path)
+    meeting = None
+    if meeting_path.is_file():
+        meeting = _read_json_sidecar(meeting_path)
+    elif txt_path.is_file():
+        raise AppError("This transcript has no timings to follow the cut. Delete it first, then trim.")
+
+    tmp = wav.with_name(f".{wav.name}.trim")
+    try:
+        with wave.open(str(wav), "rb") as source:
+            rate, frames = source.getframerate(), source.getnframes()
+            first = max(0, round(start * rate))
+            last = min(frames, round(end * rate))
+            if last - first < TRIM_MIN_SECONDS * rate:
+                raise AppError("Keep at least one second of the recording.")
+            if first == 0 and last == frames:
+                raise AppError("Nothing to trim.")
+            _copy_frames(source, tmp, first, last)
+        os.replace(tmp, wav)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    offset, kept = first / rate, (last - first) / rate
+    if meeting is not None:
+        segments = []
+        for seg in meeting.get("segments") or []:
+            if not 0 <= (seg["start"] + seg["end"]) / 2 - offset < kept:
+                continue
+            seg["start"] = round(max(0.0, seg["start"] - offset), 3)
+            seg["end"] = round(min(kept, seg["end"] - offset), 3)
+            segments.append(seg)
+        meeting["segments"] = segments
+        meeting["duration"] = round(kept, 2)
+        meeting["analysis_stale"] = True
+        atomic_write_text(meeting_path, json.dumps(meeting, ensure_ascii=False, indent=2))
+        txt_path.write_text(_render_segments_text(segments))
+    return {"duration": kept, "transcript_shifted": meeting is not None}
 
 
 

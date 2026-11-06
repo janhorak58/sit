@@ -68,5 +68,7 @@ export const deleteFolder = path => post('/library/folder/delete', {path});
 export const remove = path => post('/library/delete', {path});
 export const move = (folder, name, to_folder, to_name, wav_path) =>
   post('/library/move', {folder, name, to_folder, to_name, wav_path});
+export const recordingLevels = path => get('/library/levels?path=' + encodeURIComponent(path));
+export const trimRecording = (path, start, end) => post('/library/trim', {path, start, end});
 
 export const audioUrl = path => '/library/audio?path=' + encodeURIComponent(path);

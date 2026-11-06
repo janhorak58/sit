@@ -16,6 +16,8 @@ IDLE = {
     "diarization_backend": None,
 }
 
+ACTIVE_STAGES = {"transcribing", "diarizing", "merging", "analyzing"}
+
 
 class Progress:
     def __init__(self):
@@ -30,7 +32,7 @@ class Progress:
     def begin(self, **fields):
         """Start the only supported job, returning False while one is active."""
         with self._lock:
-            if self._state["stage"] in {"transcribing", "diarizing", "merging", "analyzing"}:
+            if self._state["stage"] in ACTIVE_STAGES:
                 return False
             self._state = {**IDLE, "stage": "transcribing", **fields}
             self._owner = None
@@ -64,6 +66,10 @@ class Progress:
     def snapshot(self):
         with self._lock:
             return dict(self._state)
+
+    def active(self):
+        with self._lock:
+            return self._state["stage"] in ACTIVE_STAGES
 
 
 progress = Progress()
