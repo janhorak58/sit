@@ -622,6 +622,49 @@ def test_browse_lists_newest_recordings_and_folders_first(monkeypatch, tmp_path)
     assert listing["subfolders"] == ["Archive 2025", "Archive 2024"]
 
 
+def test_saved_recording_shares_its_folder_name_and_lists_as_a_meeting(monkeypatch, tmp_path):
+    from transcriber import library, paths
+
+    monkeypatch.setattr(library, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(paths, "DATA_DIR", tmp_path)
+    take = tmp_path / "take.wav"
+    take.write_bytes(b"")
+
+    # The folder is named the way the UI names it ("/" and ":" become "-").
+    library.store_recording(take, "Team/Recording 11-6-2026 02-45 PM", "Recording 11/6/2026 02:45 PM")
+
+    listing = library.browse("Team")
+    assert listing["subfolders"] == []
+    assert [(item["dir"], item["name"]) for item in listing["items"]] == [
+        ("Team/Recording 11-6-2026 02-45 PM", "Recording 11-6-2026 02-45 PM"),
+    ]
+
+
+def test_older_recording_folders_list_and_rename_as_their_meeting(monkeypatch, tmp_path):
+    from transcriber import library, paths
+
+    monkeypatch.setattr(library, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(paths, "DATA_DIR", tmp_path)
+    # Saved before file and folder names agreed: "_" in the file, "-" in the folder.
+    holder = tmp_path / "Team" / "Recording 9-10-2026 01-10 PM"
+    (holder / "audio").mkdir(parents=True)
+    (holder / "audio" / "Recording 9_10_2026 01_10 PM.wav").write_bytes(b"")
+    (holder / "Recording 9_10_2026 01_10 PM.txt").write_text("hi")
+    (tmp_path / "Team" / "Notes").mkdir()
+    (tmp_path / "Team" / "Notes" / "other.txt").write_text("hi")
+
+    listing = library.browse("Team")
+    assert listing["subfolders"] == ["Notes"]
+    assert [item["name"] for item in listing["items"]] == ["Recording 9_10_2026 01_10 PM"]
+
+    result = library.move_item(
+        "Team/Recording 9-10-2026 01-10 PM", "Recording 9_10_2026 01_10 PM", "Team/Recording 9-10-2026 01-10 PM",
+        "Planning", "Team/Recording 9-10-2026 01-10 PM/audio/Recording 9_10_2026 01_10 PM.wav",
+    )
+    assert result["folder"] == "Team/Planning"
+    assert (tmp_path / "Team/Planning/audio/Planning.wav").is_file()
+
+
 def test_move_item_moves_meeting_and_summary_json_sidecars(monkeypatch, tmp_path):
     from transcriber import library, paths
 
