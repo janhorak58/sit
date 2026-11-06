@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from ..connections import (
     endpoints,
     get_connection,
+    get_connections,
     normalize_connections,
     public_connections,
     save_connections,
@@ -76,7 +77,9 @@ def asr_status():
 @router.get("/asr/diagnostics")
 def asr_diagnostics():
     """Everything the settings panel needs to explain the engine choice."""
+    gateway = get_connections()["gateway"]
     return {
+        "gateway": {"enabled": gateway["enabled"], "url": gateway["url"], "api_key": bool(gateway["api_key"])},
         "remote": diagnose(),
         "local": {
             "model": LOCAL_ASR_MODEL,

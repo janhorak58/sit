@@ -34,8 +34,9 @@ class Process:
 
 
 def minimal(key):
-    """What a new user actually fills in: SSH host, user, key. Nothing else."""
+    """What a user with own servers fills in: SSH host, user, key. Nothing else."""
     return {
+        "gateway": {"enabled": False},
         "ssh": {"enabled": True, "user": "horak1", "host": "gpu.example.test", "ssh_key": str(key)},
     }
 
@@ -269,6 +270,7 @@ def test_two_services_cannot_share_one_local_port(tmp_path):
 
 def test_without_tunnels_endpoints_use_the_base_address(monkeypatch, tmp_path):
     values = {
+        "gateway": {"enabled": False},
         "ssh": {"enabled": False},
         "base_url": "http://gpu.example.test",
         "llm": {"host": "http://llm.example.test"},
@@ -291,7 +293,9 @@ def test_missing_ssh_host_is_reported_before_any_ssh_runs(monkeypatch, tmp_path)
     monkeypatch.setattr(connections, "_cached", None)
 
     with pytest.raises(AppError, match="needs an SSH host"):
-        connections.save_connections({"ssh": {"enabled": True, "user": "horak1"}})
+        connections.save_connections(
+            {"gateway": {"enabled": False}, "ssh": {"enabled": True, "user": "horak1"}}
+        )
 
 
 def test_missing_saved_key_reports_error_without_starting_ssh(monkeypatch, tmp_path):
@@ -343,7 +347,12 @@ def test_api_key_is_write_only_kept_on_save_and_cleared_on_request(monkeypatch, 
     monkeypatch.setattr(connections, "_cached", None)
 
     connections.save_connections(
-        {"ssh": {"enabled": False}, name: {"api_key": "sk-secret"}, other: {"api_key": "sk-other"}}
+        {
+            "gateway": {"enabled": False},
+            "ssh": {"enabled": False},
+            name: {"api_key": "sk-secret"},
+            other: {"api_key": "sk-other"},
+        }
     )
     assert connections.get_connection(name)["api_key"] == "sk-secret"
 
@@ -362,3 +371,63 @@ def test_api_key_is_write_only_kept_on_save_and_cleared_on_request(monkeypatch, 
     assert connections.get_connection(name)["api_key"] == ""
     assert connections.public_connections()[name]["api_key_set"] is False
     assert connections.get_connection(other)["api_key"] == "sk-other"
+
+
+def test_gateway_routes_every_service_with_one_key_and_no_tunnels(monkeypatch, tmp_path):
+    """A stale SSH setup must not start forwards once the gateway is in use."""
+    ready_tunnels(monkeypatch)
+    monkeypatch.setattr(connections, "CONNECTIONS_PATH", tmp_path / "connections.json")
+    monkeypatch.setattr(connections, "_cached", None)
+
+    connections.save_connections(
+        {
+            "gateway": {"url": "http://gateway.example.test:4000/", "api_key": "sk-team"},
+            "ssh": {"enabled": True, "user": "horak1", "host": "gpu.example.test"},
+            "llm": {"api_key": "sk-own", "model": "gpt-oss-120b"},
+        }
+    )
+    status = connections.TunnelManager().start()
+
+    assert connections.endpoints() == {
+        "transcription": "http://gateway.example.test:4000/v1/audio/transcriptions",
+        "diarization": "http://gateway.example.test:4000/diarizer/v1/audio/diarizations",
+        "llm": "http://gateway.example.test:4000",
+    }
+    llm = connections.get_connection("llm")
+    assert (llm["api_key"], llm["model"]) == ("sk-team", "qwen3.6-a3b-35b-nvfp4")
+    assert connections.get_connection("transcription")["model"] == "whisper-large-v3-turbo"
+    assert connections.get_connection("diarization")["api_key"] == "sk-team"
+    assert status["enabled"] is False
+    assert Process.started == []
+
+
+def test_gateway_without_a_diarization_route_leaves_speakers_local(monkeypatch, tmp_path):
+    monkeypatch.setattr(connections, "CONNECTIONS_PATH", tmp_path / "connections.json")
+    monkeypatch.setattr(connections, "_cached", None)
+
+    connections.save_connections({"gateway": {"diarization_path": ""}})
+
+    assert connections.endpoints()["diarization"] == ""
+
+
+@pytest.mark.parametrize("url", ["marlene:4000", "http://gateway.example.test:4000/?x=1", "ftp://gateway"])
+def test_gateway_address_must_be_a_plain_http_url(url):
+    with pytest.raises(AppError, match="LiteLLM address"):
+        connections.normalize_connections({"gateway": {"url": url}})
+
+
+def test_gateway_key_is_write_only_kept_on_save_and_cleared_on_request(monkeypatch, tmp_path):
+    monkeypatch.setattr(connections, "CONNECTIONS_PATH", tmp_path / "connections.json")
+    monkeypatch.setattr(connections, "_cached", None)
+
+    connections.save_connections({"gateway": {"api_key": "sk-team"}})
+    public = connections.public_connections()
+    assert "api_key" not in public["gateway"]
+    assert public["gateway"]["api_key_set"] is True
+
+    connections.save_connections(public)
+    assert connections.get_connection("llm")["api_key"] == "sk-team"
+
+    connections.save_connections({**public, "forget_gateway_api_key": True})
+    assert connections.get_connection("llm")["api_key"] == ""
+    assert connections.public_connections()["gateway"]["api_key_set"] is False
