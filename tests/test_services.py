@@ -800,14 +800,14 @@ def test_upload_converts_arbitrary_audio_and_stores_it(monkeypatch, tmp_path):
 def test_remote_transcription_stitches_chunk_timestamps(monkeypatch, tmp_path):
     from pathlib import Path
 
-    monkeypatch.setattr(asr, "_mp3_chunks", lambda wav, out: [Path("a.mp3"), Path("b.mp3")])
+    monkeypatch.setattr(asr, "_flac_chunks", lambda wav, out: [Path("a.flac"), Path("b.flac")])
     bodies = iter([
         {"duration": 900.0, "segments": [{"start": 0, "end": 5, "text": "první"}]},
         {"duration": 300.0, "segments": [{"start": 10, "end": 15, "text": "druhý"}]},
     ])
     monkeypatch.setattr(asr, "_post_audio", lambda path, lang, **kwargs: (
         [asr.Segment(float(s["start"]), float(s["end"]), s["text"]) for s in next(bodies)["segments"]],
-        900.0 if path.name == "a.mp3" else 300.0,
+        900.0 if path.name == "a.flac" else 300.0,
     ))
 
     result = asr._remote_transcribe(tmp_path / "m.wav", "cs", lambda seg, total: None)
@@ -823,7 +823,7 @@ def test_remote_error_body_under_http_200_falls_back_to_local(monkeypatch, tmp_p
     wav = tmp_path / "m.wav"
     wav.write_bytes(b"RIFF")
     monkeypatch.setattr(asr, "remote_status", lambda: {"available": True})
-    monkeypatch.setattr(asr, "_mp3_chunks", lambda w, out: [wav])
+    monkeypatch.setattr(asr, "_flac_chunks", lambda w, out: [wav])
     monkeypatch.setattr(asr.httpx, "post", lambda *a, **k: SimpleNamespace(
         raise_for_status=lambda: None,
         json=lambda: {"error": {"message": "Please install vllm[audio] for audio support"}},
