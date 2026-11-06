@@ -87,6 +87,7 @@ def asr_diagnostics():
             "remote": remote_diarizer_status(),
             "local_model": get_connection("diarization")["local_model"],
             "hf_token": bool(get_connection("diarization")["hf_token"]),
+            "api_key": bool(get_connection("diarization")["api_key"]),
         },
         "analysis": analysis_remote_status(),
         "ssh": tunnels.status(),

@@ -86,6 +86,9 @@ DEFAULTS = {
         "model": SPARK_WHISPER_MODEL or FALLBACKS["transcription"][2],
         "host": "" if _asr_origin in ("", _base_url) else _asr_origin,
         "ssh_host": "",
+        # Bearer token for a gateway in front of the service (LiteLLM).
+        # Never seeded from the environment, same as llm.api_key below.
+        "api_key": "",
     },
     "diarization": {
         "local_port": _diar_port,
@@ -102,6 +105,8 @@ DEFAULTS = {
         # on the next save that doesn't mention hf_token. The env var is only
         # a first-run bootstrap value, applied once in get_connections().
         "hf_token": "",
+        # Bearer token for a gateway in front of the remote diarizer.
+        "api_key": "",
     },
     "llm": {
         "local_port": _llm_port,
@@ -224,9 +229,10 @@ def normalize_connections(values):
     merged["diarization"]["hf_token"] = _clean_text(
         merged["diarization"]["hf_token"], "HuggingFace token", optional=True
     )
-    merged["llm"]["api_key"] = _clean_text(
-        merged["llm"]["api_key"], "LLM API key", optional=True
-    )
+    for name in SERVICES:
+        merged[name]["api_key"] = _clean_text(
+            merged[name]["api_key"], f"{LABELS[name]} API key", optional=True
+        )
 
     used = {}
     for name in SERVICES:
@@ -297,28 +303,37 @@ def get_connection(name):
     return {**config[name], "endpoint": endpoint_for(config, name)}
 
 
+def bearer_headers(connection):
+    """Authorization header from a service's stored key, or None without one."""
+    key = connection.get("api_key")
+    return {"Authorization": f"Bearer {key}"} if key else None
+
+
 def public_connections():
     """Everything the browser may see: the stored secrets stay server-side."""
     config = get_connections()
     token = config["diarization"].pop("hf_token")
     config["diarization"]["hf_token_set"] = bool(token)
-    api_key = config["llm"].pop("api_key")
-    config["llm"]["api_key_set"] = bool(api_key)
+    for name in SERVICES:
+        api_key = config[name].pop("api_key")
+        config[name]["api_key_set"] = bool(api_key)
     return config
 
 
 def save_connections(values):
     """Persist settings. An empty ``hf_token`` / ``api_key`` keeps the stored
     one; the UI clears them explicitly with ``forget_hf_token`` and
-    ``forget_llm_api_key``, since the browser never receives the secret it
-    would otherwise have to send back."""
+    ``forget_<service>_api_key``, since the browser never receives the secret
+    it would otherwise have to send back."""
     global _cached
     normalized = normalize_connections(values)
     asked = values if isinstance(values, dict) else {}
+    stored = get_connections()
     if not normalized["diarization"]["hf_token"] and not asked.get("forget_hf_token"):
-        normalized["diarization"]["hf_token"] = get_connections()["diarization"]["hf_token"]
-    if not normalized["llm"]["api_key"] and not asked.get("forget_llm_api_key"):
-        normalized["llm"]["api_key"] = get_connections()["llm"]["api_key"]
+        normalized["diarization"]["hf_token"] = stored["diarization"]["hf_token"]
+    for name in SERVICES:
+        if not normalized[name]["api_key"] and not asked.get(f"forget_{name}_api_key"):
+            normalized[name]["api_key"] = stored[name]["api_key"]
     _validate_tunnel_config(normalized)
     with _lock:
         CONNECTIONS_PATH.parent.mkdir(parents=True, exist_ok=True)

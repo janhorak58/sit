@@ -264,6 +264,8 @@
               <label><span>Remote port</span><input type="number" min="0" max="65535" value="8208" data-connection-path="transcription.remote_port" placeholder="Same as local"><small>Port the service listens on there.</small></label>
             </div>
             <label><span>Model</span><input value="onnx-community/whisper-large-v3-turbo" data-connection-path="transcription.model" placeholder="onnx-community/whisper-large-v3-turbo"></label>
+            <label><span>API key</span><input type="password" autocomplete="off" spellcheck="false" data-connection-secret="transcription.api_key" placeholder="sk-…"><small id="transcription-api-key-state">Sent as an Authorization: Bearer header. Needed behind a gateway such as LiteLLM.</small></label>
+            <label class="setting-toggle"><input id="forget-transcription-api-key" type="checkbox"><span>Forget the stored API key</span></label>
             <p class="connection-endpoint" id="endpoint-transcription">http://127.0.0.1:8208/v1/audio/transcriptions</p>
             <details class="advanced-options"><summary>Advanced <span>remote address, API path, other machine</span></summary>
               <div class="custom-fields">
@@ -283,6 +285,8 @@
             </div>
             <label><span>HuggingFace token</span><input type="password" autocomplete="off" spellcheck="false" data-connection-secret="diarization.hf_token" placeholder="hf_…"><small id="hf-token-state">Only the local fallback needs it, for gated pyannote models.</small></label>
             <label class="setting-toggle"><input id="forget-hf-token" type="checkbox"><span>Forget the stored token</span></label>
+            <label><span>API key</span><input type="password" autocomplete="off" spellcheck="false" data-connection-secret="diarization.api_key" placeholder="sk-…"><small id="diarization-api-key-state">Sent as an Authorization: Bearer header to the remote service. Needed behind a gateway such as LiteLLM.</small></label>
+            <label class="setting-toggle"><input id="forget-diarization-api-key" type="checkbox"><span>Forget the stored API key</span></label>
             <p class="connection-endpoint" id="endpoint-diarization">http://127.0.0.1:8299/v1/audio/diarizations</p>
             <details class="advanced-options"><summary>Advanced <span>remote address, API path, other machine</span></summary>
               <div class="custom-fields">
