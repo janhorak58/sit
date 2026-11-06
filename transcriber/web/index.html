@@ -112,6 +112,7 @@
             </div>
             <p id="device-error" class="field-error" hidden></p>
             <label id="live-toggle-field" class="live-toggle-field"><input id="live-toggle" type="checkbox"><span class="live-toggle-track" aria-hidden="true"></span><span class="live-toggle-copy"><b>Live transcript while recording</b><small>Optional rough preview. The complete recording is transcribed again after saving.</small></span></label>
+            <label id="screen-toggle-field" class="live-toggle-field" hidden><input id="screen-toggle" type="checkbox"><span class="live-toggle-track" aria-hidden="true"></span><span class="live-toggle-copy"><b>Record the screen too</b><small>Your desktop asks which screen or window to share. The video plays next to the transcript.</small></span></label>
             <div id="source-locked" class="source-locked" hidden><span>WAV</span><div><b>Recording is saved</b><small>It stays as the fixed input. Transcript, speakers, and analysis can be regenerated without recording again.</small></div><button id="to-transcript" class="small quiet" type="button">Open transcript step →</button></div>
             <div id="source-choices" class="source-grid">
               <button id="start" class="source-card" type="button"><span class="source-icon mic">●</span><b>Start recording</b><small>Selected microphone + system audio</small></button>
@@ -212,7 +213,7 @@
         <div><p class="eyebrow">MEETING</p><div class="meeting-title-row"><h1 id="meeting-title">Transcript</h1><button id="meeting-rename" class="title-edit" type="button" aria-label="Rename meeting" title="Rename meeting">✎</button></div></div>
         <div class="workspace-header-actions"><button id="meeting-back" class="small quiet" type="button">← Library</button><button id="meeting-edit" class="small primary" type="button">Edit meeting</button></div>
       </header>
-      <div class="meeting-player"><audio id="meeting-audio" controls></audio><p id="meeting-meta" class="meeting-meta"></p></div>
+      <div class="meeting-player"><video id="meeting-screen" class="meeting-screen" muted playsinline preload="metadata" title="Double-click for full screen" hidden></video><audio id="meeting-audio" controls></audio><p id="meeting-meta" class="meeting-meta"></p></div>
       <div id="meeting-body" class="meeting-body"></div>
       <dialog id="meeting-artifact-dialog" class="transcript-dialog"><div class="transcript-dialog-head"><div><p class="eyebrow" id="meeting-artifact-kicker">MEETING OUTPUT</p><h2 id="meeting-artifact-title">Output</h2></div><button id="meeting-artifact-close" class="icon" type="button" aria-label="Close output">×</button></div><section id="meeting-artifact-body" class="meeting-transcript"></section></dialog>
     </div>

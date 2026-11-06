@@ -46,6 +46,17 @@ saved audio for good. An existing transcript follows it (lines outside the kept
 part are dropped, the rest shift to the new times, speaker names stay), and an
 existing AI analysis is marked outdated.
 
+On a Linux desktop with a screen-sharing portal (`xdg-desktop-portal` with a
+GNOME, KDE, Hyprland or wlroots backend) and GStreamer's PipeWire and VP8
+plugins (on Arch `gstreamer gst-plugin-pipewire gst-plugins-good`), the
+**Capture** step also offers **Record the screen too**. The desktop asks once
+which monitor or window to share. Later recordings reuse that choice until
+`.screencast-token` is deleted from the library directory. The video (WebM, 5
+frames per second) is saved as `audio/<name>.screen.webm` next to the
+recording. In the meeting view it plays muted above the audio and follows its
+seeking and speed. Trimming, renaming, moving and deleting the recording take
+the video along. Without the portal or the plugins the option is not shown.
+
 The FastAPI backend can be opened in a browser or in a native Tauri window.
 Transcription uses a configured private ASR server, falling back to local
 Whisper large-v3-turbo (CPU, ONNX) when it is unavailable — that fallback is part of the

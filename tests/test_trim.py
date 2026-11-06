@@ -59,7 +59,7 @@ def test_trim_keeps_exact_range_and_moves_transcript_with_it(data_dir):
 
     result = library.trim_recording("Team/Weekly/audio/Weekly.wav", 2.0, 8.0)
 
-    assert result == {"duration": 6.0, "transcript_shifted": True}
+    assert result == {"duration": 6.0, "transcript_shifted": True, "screen_kept": None}
     assert np.array_equal(_read_wav(data_dir / "Team/Weekly/audio/Weekly.wav"), audio[2 * RATE:8 * RATE])
     meeting = json.loads((data_dir / "Team/Weekly/Weekly.meeting.json").read_text())
     assert [(s["start"], s["end"], s["text"]) for s in meeting["segments"]] == [
@@ -79,7 +79,7 @@ def test_trim_without_transcript_only_cuts_audio(data_dir):
 
     result = library.trim_recording("Solo/audio/Solo.wav", 0, 3.25)
 
-    assert result == {"duration": 3.25, "transcript_shifted": False}
+    assert result == {"duration": 3.25, "transcript_shifted": False, "screen_kept": None}
     assert np.array_equal(_read_wav(data_dir / "Solo/audio/Solo.wav"), audio[:52000])
     assert sorted(p.name for p in (data_dir / "Solo/audio").iterdir()) == ["Solo.wav"]
 

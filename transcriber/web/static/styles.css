@@ -295,6 +295,8 @@ input:focus, select:focus { border-color: var(--primary-2); box-shadow: 0 0 0 2p
 button.icon { padding: 3px 7px; border: 0; color: var(--muted); background: transparent; font-size: 21px; }
 
 #meeting-audio { width: 100%; display: block; }
+/* Sticky with the audio, so it stays short enough to leave room for the transcript. */
+.meeting-screen { display: block; width: 100%; max-height: 36vh; margin-bottom: 12px; object-fit: contain; background: #000; cursor: zoom-in; }
 .meeting-player { position: sticky; top: 0; z-index: 5; padding: 14px 18px; border: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow); }
 .meeting-meta { margin: 10px 0 0; color: var(--muted); font-size: 11px; }
 .meeting-body { display: grid; gap: 24px; align-items: start; margin-top: 24px; }

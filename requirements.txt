@@ -11,3 +11,5 @@ python-dotenv
 numpy
 # AI analysis PDF export (pure Python).
 fpdf2
+# Screen recording: talks to the desktop screen-sharing portal over D-Bus.
+jeepney

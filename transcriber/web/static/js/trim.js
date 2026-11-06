@@ -102,7 +102,9 @@ async function apply() {
   loadedPath = null;
   await load();
   setStatus(`Trimmed. The recording is now ${formatTime(result.duration)} long.`
-    + (result.transcript_shifted ? ' Transcript times follow the cut. Any AI analysis is marked outdated.' : ''));
+    + (result.transcript_shifted ? ' Transcript times follow the cut. Any AI analysis is marked outdated.' : '')
+    + (result.screen_kept === true ? ' The screen video follows the cut.' : '')
+    + (result.screen_kept === false ? ' The screen video only covered the removed part, so it was deleted.' : ''));
   window.dispatchEvent(new Event('transcriber:recording-trimmed'));
   window.dispatchEvent(new Event('transcriber:library-changed'));
 }
