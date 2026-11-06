@@ -14,13 +14,12 @@ import logging
 import math
 from pathlib import Path
 import subprocess
-import tempfile
 import wave
 
 import httpx
 
 from . import echo
-from .config import LOCAL_ASR_DEFAULT_LANGUAGE
+from .config import LOCAL_ASR_DEFAULT_LANGUAGE, work_dir
 from .connections import bearer_headers, get_connection
 from .models import get_local_asr
 
@@ -81,7 +80,7 @@ MODEL_AUDIO_FILTER = "highpass=f=70,lowpass=f=7900,afftdn=nr=8:nf=-35,speechnorm
 @contextlib.contextmanager
 def _model_audio(wav_path):
     """Yield an enhanced temporary WAV, falling back to the original on failure."""
-    with tempfile.TemporaryDirectory() as tmp:
+    with work_dir() as tmp:
         enhanced = Path(tmp) / "enhanced.wav"
         try:
             proc = subprocess.run(
@@ -190,7 +189,7 @@ def _remote_transcribe(wav_path, language, on_segment, timeout=3600.0):
     every speaker label assigned against the (undrifted) diarization timeline.
     """
     segments = []
-    with tempfile.TemporaryDirectory() as tmp:
+    with work_dir() as tmp:
         chunks = _flac_chunks(wav_path, tmp)
         total = len(chunks) * CHUNK_SECONDS  # only drives the progress bar
         duration = 0.0
@@ -340,7 +339,7 @@ def channel_wav(wav_path, index):
     track. Left in, the far end's speech reached both the transcript and the
     diarizer a second time, as if someone in the room had repeated it.
     """
-    with tempfile.TemporaryDirectory() as tmp:
+    with work_dir() as tmp:
         out = Path(tmp) / f"channel{index}.wav"
         if CHANNEL_LABELS[index] != "mic" or not _echo_free_mic(wav_path, out):
             subprocess.run(
@@ -509,7 +508,7 @@ def diagnose():
         }
         return report
     try:
-        with tempfile.TemporaryDirectory() as tmp:
+        with work_dir() as tmp:
             probe = Path(tmp) / "probe.flac"
             subprocess.run(
                 ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1",

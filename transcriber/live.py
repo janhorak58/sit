@@ -15,6 +15,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from .asr import Segment, remote_status, transcribe_live as transcribe
+from .config import WORK_DIR
 
 log = logging.getLogger(__name__)
 
@@ -119,7 +120,8 @@ def _read_window(path, data_offset, frame_rate, channels, sample_width, start_s,
 
 
 def _write_temp_wav(pcm_bytes, frame_rate, channels, sample_width):
-    fd = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    WORK_DIR.mkdir(parents=True, exist_ok=True)
+    fd = tempfile.NamedTemporaryFile(suffix=".wav", delete=False, dir=WORK_DIR)
     fd.close()
     with wave.open(fd.name, "wb") as wf:
         wf.setnchannels(channels)

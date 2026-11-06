@@ -2,6 +2,9 @@
 
 import os
 from pathlib import Path
+import shutil
+import tempfile
+import time
 
 from dotenv import load_dotenv
 
@@ -43,6 +46,13 @@ DATA_DIR = Path(
 ).expanduser().resolve()
 SCRATCH_DIR = DATA_DIR / "_scratch"
 WAV_PATH = SCRATCH_DIR / "current.wav"
+# Intermediate audio: split channels, cleaned copies, upload chunks. It lives
+# on the library's disk, not in /tmp, which is often RAM-backed with a per-user
+# quota. A three-hour meeting needs over a gigabyte of these files, and a full
+# /tmp also broke unrelated programs, the desktop window among them.
+WORK_DIR = SCRATCH_DIR / "work"
+# A job's files outlive it only when the backend is killed mid-job.
+_STALE_WORK_SECONDS = 24 * 3600
 
 AUDIO_SUBDIR = "audio"
 
@@ -99,4 +109,17 @@ INDEX_HTML = WEB_DIR / "index.html"
 
 def ensure_dirs():
     """Create the writable directories the app assumes exist."""
-    SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
+    WORK_DIR.mkdir(parents=True, exist_ok=True)
+    cutoff = time.time() - _STALE_WORK_SECONDS
+    for entry in WORK_DIR.iterdir():
+        try:
+            if entry.stat().st_mtime < cutoff:
+                shutil.rmtree(entry) if entry.is_dir() else entry.unlink()
+        except OSError:
+            pass
+
+
+def work_dir():
+    """A fresh directory for one job's intermediate files, removed afterwards."""
+    WORK_DIR.mkdir(parents=True, exist_ok=True)
+    return tempfile.TemporaryDirectory(dir=WORK_DIR)

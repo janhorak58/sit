@@ -665,7 +665,10 @@ A relative `XDG_DATA_HOME` is ignored per the XDG spec.
 Transcripts: `<folder>/<name>.txt`; structured data: `<name>.meeting.json`;
 recordings: `<folder>/audio/<name>.wav`; summaries: `<name>.summary.md` /
 `.summary.json`. Older audio directly in a folder remains readable. Working
-files live in `_scratch/`.
+files live in `_scratch/`. Intermediate audio of a running job (split
+channels, cleaned copies, upload chunks) goes to `_scratch/work/`, not to
+`/tmp`. On many systems `/tmp` sits in RAM with a per-user quota, and a long
+meeting filled it. Leftovers of a killed job are removed after a day.
 
 ### Recording and the optional file-manager integration
 
