@@ -43,8 +43,10 @@ torch), see [Setup B](#setup-b--local-fallback-offline-capable). Summaries
 require a separate OpenAI-compatible server; there is no built-in local
 fallback for summaries. When using remote ASR/diarization, audio is sent to
 that server; the transcript is sent to the summary server when generating a
-summary. All of this is configured in the UI panel **Connections**; for purely
-local ASR, clear the transcription and diarization local ports there.
+summary. All of this is configured in the UI panel **Connections**. By
+default all three services run on one shared LiteLLM server, and its API key
+is the only field to fill in. For purely local ASR, turn the shared server off
+there and clear the transcription and diarization local ports.
 
 ## Video guides
 
@@ -327,8 +329,8 @@ uv pip install --python .venv/bin/python -r requirements-diarization.txt
   [speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) and
   [segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0).
   Models add ~100 MB to the cache.
-- For a purely local run, clear the transcription and diarization local ports
-  under **Connections**.
+- For a purely local run, turn off the shared LiteLLM server and clear the
+  transcription and diarization local ports under **Connections**.
 - pyannote 4 warns on import that `torchcodec` "is not installed correctly".
   Harmless here: SIT decodes audio with `ffmpeg` and hands pyannote an
   in-memory waveform, never using torchcodec's decoder.
@@ -509,11 +511,17 @@ are the handful of process-level variables in
 [Environment variables](#environment-variables) (library path, bind address,
 local ASR tunables), which you rarely touch.
 
-Managed SSH is the
-normal way to reach them: tick *Reach the AI services through SSH tunnels*,
-fill in the **SSH host** and **SSH user**, and press **Set up and test** —
-either the button on a service card, which reports that service's result
-inline, or the one at the bottom, which reports all three. SSH port `22`, the
+By default SIT uses the shared LiteLLM server: paste your API key into the
+**LiteLLM** card and press **Save and test**. The address, the model names and
+the speaker recognition route are prefilled under *Advanced*, and SIT reaches
+the server directly, without SSH. The key is stored like the other secrets
+(see below).
+
+For your own servers, untick *Use the shared LiteLLM server*. Managed SSH is
+then the normal way to reach them: tick *Reach the AI services through SSH
+tunnels*, fill in the **SSH host** and **SSH user**, and press **Set up and
+test** on a service card, which reports that service's result inline, or
+**Save and test** at the bottom, which reports all three. SSH port `22`, the
 local and remote ports, the API paths, and the model names are prefilled, so
 nothing else is usually needed. SIT opens the forwards itself, waits until
 each local port actually accepts connections, closes them when it quits, and
@@ -579,18 +587,21 @@ server answers 401/403, Service diagnostics says the key was rejected instead
 of reporting the endpoint as running.
 
 Transcription and speaker recognition have the same kind of **API key**
-field. Set it when the service sits behind a gateway such as LiteLLM. SIT then
-sends the key with every upload and with the health probe, and Service
-diagnostics shows whether a key is stored. The HuggingFace token stays
-separate because only the local pyannote fallback uses it.
+field. Set it when your own service sits behind a gateway such as LiteLLM.
+SIT then sends the key with every upload and with the health probe, and
+Service diagnostics shows whether a key is stored. The HuggingFace token stays
+separate, under *This computer*, because only the local pyannote fallback
+uses it.
 
-One LiteLLM proxy can serve all three services. Point each card at it (three
-tunnels with different local ports to the same remote port, for example 8208,
-8299 and 8200 to remote 4000) and enter the key in every card. Set the
-**Model** fields to the names LiteLLM lists in `/v1/models`. LiteLLM has no
-diarization API, so the diarizer goes through a pass-through route, and the
-Pyannote card's **API path** becomes `/diarizer/v1/audio/diarizations`. A
-LiteLLM config for the services in `asr/` and `diarizer/`:
+The **LiteLLM** card points all three services at one LiteLLM proxy with one
+key, and that key replaces the per-service keys and model names. SIT calls
+`<address>/v1/audio/transcriptions`, `<address>/v1/chat/completions` and
+`<address>` plus the speaker recognition path. The model fields must match
+the names LiteLLM lists in `/v1/models`, and the key must be allowed to use
+both models. LiteLLM has no diarization API, so the diarizer goes through a
+pass-through route, `/diarizer/v1/audio/diarizations` by default. Clear that
+path to recognize speakers on this computer instead. A LiteLLM config for the
+services in `asr/` and `diarizer/`:
 
 ```yaml
 model_list:

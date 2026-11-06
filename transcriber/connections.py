@@ -1,13 +1,16 @@
 """User-owned remote service settings and managed SSH port forwards.
 
-One SSH identity (user, host, port, key) serves every service, so a fresh
-install only needs those two or three fields. Each service carries the local
-port SIT talks to, the port it listens on the remote machine, and the address
-it binds there — all prefilled. A service can point at a different machine
-through its own SSH host override.
+By default every service runs behind one shared LiteLLM gateway, so a fresh
+install needs nothing but an API key. SIT then talks to the gateway directly:
+no SSH, no ports.
 
-With a tunnel, SIT always talks to ``http://127.0.0.1:<local port>``; without
-one it talks to the shared base address (or a per-service host override).
+With the gateway off, SIT reaches its own servers. One SSH identity (user,
+host, port, key) serves every service. Each service carries the local port SIT
+talks to, the port it listens on the remote machine, and the address it binds
+there, all prefilled. A service can point at a different machine through its
+own SSH host override. With a tunnel, SIT talks to
+``http://127.0.0.1:<local port>``; without one it talks to the shared base
+address (or a per-service host override).
 """
 
 from __future__ import annotations
@@ -50,6 +53,9 @@ FALLBACKS = {
     "diarization": (8299, "/v1/audio/diarizations", ""),
     "llm": (8100, "", "gpt-oss-120b"),
 }
+# Where each service lives behind the gateway. LiteLLM has no diarization API,
+# so speakers go through a pass-through route whose path is configurable.
+GATEWAY_PATHS = {"transcription": "/v1/audio/transcriptions", "llm": ""}
 
 
 def _split_url(url, name):
@@ -68,6 +74,15 @@ _llm_origin, _llm_port, _llm_path = _split_url(OMNIROUTE_URL, "llm")
 _base_url = _asr_origin or _diar_origin or _llm_origin or "http://127.0.0.1"
 
 DEFAULTS = {
+    "gateway": {
+        "enabled": True,
+        "url": "http://marlene.cxi.tul.cz:4000",
+        # Never seeded from the environment, same as the service keys below.
+        "api_key": "",
+        "transcription_model": "whisper-large-v3-turbo",
+        "llm_model": "qwen3.6-a3b-35b-nvfp4",
+        "diarization_path": "/diarizer/v1/audio/diarizations",
+    },
     "ssh": {
         "enabled": False,
         "user": "",
@@ -200,8 +215,29 @@ def _path(value, label):
     return value.rstrip("/")
 
 
+def _gateway_url(value):
+    """Full base URL of the gateway: unlike a service origin it carries its port."""
+    value = str(value or "").strip().rstrip("/")
+    parsed = urlsplit(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise AppError("LiteLLM address must be an http:// or https:// address.")
+    if parsed.query or parsed.fragment:
+        raise AppError("LiteLLM address must not contain a query or fragment.")
+    try:
+        parsed.port
+    except ValueError as exc:
+        raise AppError("LiteLLM address has an invalid port.") from exc
+    return value
+
+
 def normalize_connections(values):
     merged = _merge(DEFAULTS, values)
+    gateway = merged["gateway"]
+    gateway["url"] = _gateway_url(gateway["url"])
+    gateway["api_key"] = _clean_text(gateway["api_key"], "LiteLLM API key", optional=True)
+    gateway["transcription_model"] = str(gateway["transcription_model"] or "").strip()
+    gateway["llm_model"] = str(gateway["llm_model"] or "").strip()
+    gateway["diarization_path"] = _path(gateway["diarization_path"], "Speaker recognition")
     ssh = merged["ssh"]
     ssh["enabled"] = bool(ssh["enabled"])
     ssh["user"] = _clean_text(ssh["user"], "SSH user", optional=True)
@@ -253,10 +289,15 @@ def ssh_host_for(config, name):
     return config[name]["ssh_host"] or config["ssh"]["host"]
 
 
+def uses_tunnels(config):
+    """SSH forwards only matter for own servers; the gateway is reached directly."""
+    return config["ssh"]["enabled"] and not config["gateway"]["enabled"]
+
+
 def is_tunnelled(config, name):
     service = config[name]
     return bool(
-        config["ssh"]["enabled"]
+        uses_tunnels(config)
         and ssh_host_for(config, name)
         and service["local_port"]
         and service["remote_port"]
@@ -265,6 +306,12 @@ def is_tunnelled(config, name):
 
 def endpoint_for(config, name):
     """Full URL of one service, or "" when it has no remote endpoint."""
+    gateway = config["gateway"]
+    if gateway["enabled"]:
+        if name == "diarization":
+            path = gateway["diarization_path"]
+            return gateway["url"] + path if path else ""
+        return gateway["url"] + GATEWAY_PATHS[name]
     service = config[name]
     if not service["local_port"]:
         return ""
@@ -298,9 +345,16 @@ def endpoints():
 
 
 def get_connection(name):
-    """One service's settings plus its resolved ``endpoint``."""
+    """One service's effective settings plus its resolved ``endpoint``. Behind
+    the gateway, its key and model names replace the service's own."""
     config = get_connections()
-    return {**config[name], "endpoint": endpoint_for(config, name)}
+    connection = {**config[name], "endpoint": endpoint_for(config, name)}
+    gateway = config["gateway"]
+    if gateway["enabled"]:
+        connection["api_key"] = gateway["api_key"]
+        if name in GATEWAY_PATHS:
+            connection["model"] = gateway[f"{name}_model"]
+    return connection
 
 
 def bearer_headers(connection):
@@ -314,7 +368,7 @@ def public_connections():
     config = get_connections()
     token = config["diarization"].pop("hf_token")
     config["diarization"]["hf_token_set"] = bool(token)
-    for name in SERVICES:
+    for name in ("gateway", *SERVICES):
         api_key = config[name].pop("api_key")
         config[name]["api_key_set"] = bool(api_key)
     return config
@@ -323,15 +377,15 @@ def public_connections():
 def save_connections(values):
     """Persist settings. An empty ``hf_token`` / ``api_key`` keeps the stored
     one; the UI clears them explicitly with ``forget_hf_token`` and
-    ``forget_<service>_api_key``, since the browser never receives the secret
-    it would otherwise have to send back."""
+    ``forget_<gateway|service>_api_key``, since the browser never receives the
+    secret it would otherwise have to send back."""
     global _cached
     normalized = normalize_connections(values)
     asked = values if isinstance(values, dict) else {}
     stored = get_connections()
     if not normalized["diarization"]["hf_token"] and not asked.get("forget_hf_token"):
         normalized["diarization"]["hf_token"] = stored["diarization"]["hf_token"]
-    for name in SERVICES:
+    for name in ("gateway", *SERVICES):
         if not normalized[name]["api_key"] and not asked.get(f"forget_{name}_api_key"):
             normalized[name]["api_key"] = stored[name]["api_key"]
     _validate_tunnel_config(normalized)
@@ -365,7 +419,7 @@ def _plan(config):
 
 
 def _validate_tunnel_config(config):
-    if not config["ssh"]["enabled"]:
+    if not uses_tunnels(config):
         return
     if not _plan(config):
         raise AppError(
@@ -512,7 +566,7 @@ class TunnelManager:
             self.stop()
             self._errors = {}
             self._services = {}
-            if not config["ssh"]["enabled"]:
+            if not uses_tunnels(config):
                 return self.status()
             try:
                 _validate_tunnel_config(config)
@@ -597,7 +651,7 @@ class TunnelManager:
         if self._closing.is_set():
             return False
         config = get_connections()
-        if not config["ssh"]["enabled"]:
+        if not uses_tunnels(config):
             return False
         with self._lock:
             self._reap()
@@ -634,7 +688,7 @@ class TunnelManager:
             config = get_connections()
             hosts = sorted(set(self._services) | set(self._errors))
             return {
-                "enabled": config["ssh"]["enabled"],
+                "enabled": uses_tunnels(config),
                 "hosts": [
                     {
                         "host": host,

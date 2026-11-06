@@ -244,8 +244,30 @@
     <div class="view" data-view="settings" hidden>
       <header class="workspace-header"><div><p class="eyebrow">CONNECTIONS</p><h1>Remote processing</h1></div><div class="row"><button id="settings-refresh" class="small" type="button">↻ Test connections</button></div></header>
       <form id="connections-form" class="connections-form">
+        <section class="card connection-card connection-gateway">
+          <header class="custom-card-head"><div><p class="eyebrow">LITELLM</p><h2>Shared AI server</h2></div><p>Transcription, speaker recognition and AI analysis all run on one LiteLLM server. Paste your API key. Everything else is prefilled.</p></header>
+          <label class="setting-toggle connection-enable"><input id="gateway-enabled" type="checkbox" data-connection-path="gateway.enabled"><span>Use the shared LiteLLM server</span></label>
+          <div id="gateway-fields" class="custom-fields">
+            <label><span>API key</span><input type="password" autocomplete="off" spellcheck="false" data-connection-secret="gateway.api_key" placeholder="sk-…"><small id="gateway-api-key-state">Ask the LiteLLM administrator for a personal key.</small></label>
+            <label class="setting-toggle"><input id="forget-gateway-api-key" type="checkbox"><span>Forget the stored API key</span></label>
+            <div class="gateway-results">
+              <div><span>Transcription</span><p class="connection-result" data-result="transcription"></p></div>
+              <div><span>Speakers</span><p class="connection-result" data-result="diarization"></p></div>
+              <div><span>AI analysis</span><p class="connection-result" data-result="llm"></p></div>
+            </div>
+            <details class="advanced-options"><summary>Advanced <span>server address, model names</span></summary>
+              <div class="custom-fields">
+                <label><span>LiteLLM address</span><input type="url" data-connection-path="gateway.url" placeholder="http://marlene.cxi.tul.cz:4000"></label>
+                <label><span>Transcription model</span><input data-connection-path="gateway.transcription_model" placeholder="whisper-large-v3-turbo"></label>
+                <label><span>AI analysis model</span><input data-connection-path="gateway.llm_model" placeholder="qwen3.6-a3b-35b-nvfp4"></label>
+                <label><span>Speaker recognition path</span><input data-connection-path="gateway.diarization_path" placeholder="/diarizer/v1/audio/diarizations"><small>LiteLLM pass-through route to the pyannote service. Empty = speakers are recognized on this computer.</small></label>
+              </div>
+            </details>
+          </div>
+        </section>
+        <div id="own-servers" class="own-servers">
         <section class="card connection-card connection-ssh">
-          <header class="custom-card-head"><div><p class="eyebrow">STEP 1</p><h2>SSH access</h2></div><p>Fill in the machine and your username; everything else is prefilled. SIT opens the port forwards itself and closes them when it quits. Authentication uses your SSH key or agent — passwords are never stored.</p></header>
+          <header class="custom-card-head"><div><p class="eyebrow">OWN SERVERS</p><h2>SSH access</h2></div><p>Fill in the machine and your username; everything else is prefilled. SIT opens the port forwards itself and closes them when it quits. Authentication uses your SSH key or agent — passwords are never stored.</p></header>
           <label class="setting-toggle connection-enable"><input id="ssh-enabled" type="checkbox" data-connection-path="ssh.enabled"><span>Reach the AI services through SSH tunnels</span></label>
           <div class="custom-fields two-column">
             <label><span>SSH host</span><input data-connection-path="ssh.host" placeholder="host.example.com"><small>The machine running the services. A service can override it below.</small></label>
@@ -275,7 +297,7 @@
                 <label><span>Direct address (no tunnel)</span><input type="url" data-connection-path="transcription.host" placeholder="Uses the base address"></label>
               </div>
             </details>
-            <div class="connection-test"><button class="small primary" type="button" data-connection-test="transcription">Set up and test</button><p class="connection-result" id="result-transcription"></p></div>
+            <div class="connection-test"><button class="small primary" type="button" data-connection-test="transcription">Set up and test</button><p class="connection-result" data-result="transcription"></p></div>
           </section>
           <section class="card connection-card">
             <header class="connection-card-head"><div><p class="eyebrow">SPEAKERS</p><h2>Pyannote</h2></div></header>
@@ -283,8 +305,6 @@
               <label><span>Local port</span><input type="number" min="0" max="65535" value="8299" data-connection-path="diarization.local_port" placeholder="Off"><small>Port on this computer. Empty = service unused.</small></label>
               <label><span>Remote port</span><input type="number" min="0" max="65535" value="8299" data-connection-path="diarization.remote_port" placeholder="Same as local"><small>Port the service listens on there.</small></label>
             </div>
-            <label><span>HuggingFace token</span><input type="password" autocomplete="off" spellcheck="false" data-connection-secret="diarization.hf_token" placeholder="hf_…"><small id="hf-token-state">Only the local fallback needs it, for gated pyannote models.</small></label>
-            <label class="setting-toggle"><input id="forget-hf-token" type="checkbox"><span>Forget the stored token</span></label>
             <label><span>API key</span><input type="password" autocomplete="off" spellcheck="false" data-connection-secret="diarization.api_key" placeholder="sk-…"><small id="diarization-api-key-state">Sent as an Authorization: Bearer header to the remote service. Needed behind a gateway such as LiteLLM.</small></label>
             <label class="setting-toggle"><input id="forget-diarization-api-key" type="checkbox"><span>Forget the stored API key</span></label>
             <p class="connection-endpoint" id="endpoint-diarization">http://127.0.0.1:8299/v1/audio/diarizations</p>
@@ -292,12 +312,11 @@
               <div class="custom-fields">
                 <label><span>Remote address</span><input value="127.0.0.1" data-connection-path="diarization.remote_host" placeholder="127.0.0.1"><small>Address the service binds on the remote machine.</small></label>
                 <label><span>API path</span><input value="/v1/audio/diarizations" data-connection-path="diarization.path" placeholder="/v1/audio/diarizations"></label>
-                <label><span>Local fallback model</span><input value="pyannote/speaker-diarization-3.1" data-connection-path="diarization.local_model" placeholder="pyannote/speaker-diarization-3.1"></label>
                 <label><span>Runs on another machine</span><input data-connection-path="diarization.ssh_host" placeholder="Uses the SSH host above"></label>
                 <label><span>Direct address (no tunnel)</span><input type="url" data-connection-path="diarization.host" placeholder="Uses the base address"></label>
               </div>
             </details>
-            <div class="connection-test"><button class="small primary" type="button" data-connection-test="diarization">Set up and test</button><p class="connection-result" id="result-diarization"></p></div>
+            <div class="connection-test"><button class="small primary" type="button" data-connection-test="diarization">Set up and test</button><p class="connection-result" data-result="diarization"></p></div>
           </section>
           <section class="card connection-card">
             <header class="connection-card-head"><div><p class="eyebrow">AI ANALYSIS</p><h2>LLM</h2></div></header>
@@ -317,13 +336,21 @@
                 <label><span>Direct address (no tunnel)</span><input type="url" data-connection-path="llm.host" placeholder="Uses the base address"></label>
               </div>
             </details>
-            <div class="connection-test"><button class="small primary" type="button" data-connection-test="llm">Set up and test</button><p class="connection-result" id="result-llm"></p></div>
+            <div class="connection-test"><button class="small primary" type="button" data-connection-test="llm">Set up and test</button><p class="connection-result" data-result="llm"></p></div>
           </section>
         </section>
         <details class="advanced-options connection-global-advanced"><summary>Without tunnels <span>shared base address</span></summary>
           <label class="base-url-field"><span>Base address</span><input type="url" data-connection-path="base_url" placeholder="http://127.0.0.1"><small>Used only by services without a tunnel. No port here — ports belong to the services.</small></label>
         </details>
-        <footer class="connection-actions"><p id="connections-status" class="status-line">Set up and test opens the tunnels and checks every service.</p><button id="connections-save" class="primary" type="submit">Set up and test</button></footer>
+        </div>
+        <details class="advanced-options connection-global-advanced"><summary>This computer <span>speaker recognition fallback</span></summary>
+          <div class="custom-fields two-column">
+            <label><span>HuggingFace token</span><input type="password" autocomplete="off" spellcheck="false" data-connection-secret="diarization.hf_token" placeholder="hf_…"><small id="hf-token-state">Only the local fallback needs it, for gated pyannote models.</small></label>
+            <label><span>Local fallback model</span><input value="pyannote/speaker-diarization-3.1" data-connection-path="diarization.local_model" placeholder="pyannote/speaker-diarization-3.1"></label>
+            <label class="setting-toggle"><input id="forget-hf-token" type="checkbox"><span>Forget the stored token</span></label>
+          </div>
+        </details>
+        <footer class="connection-actions"><p id="connections-status" class="status-line">Save and test checks every service.</p><button id="connections-save" class="primary" type="submit">Save and test</button></footer>
       </form>
       <div class="connections-results-head"><p class="eyebrow">LIVE STATUS</p><h2>Service diagnostics</h2></div>
       <div id="settings-body" class="settings-body"></div>
