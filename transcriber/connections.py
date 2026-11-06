@@ -80,7 +80,7 @@ DEFAULTS = {
         # Never seeded from the environment, same as the service keys below.
         "api_key": "",
         "transcription_model": "whisper-large-v3-turbo",
-        "llm_model": "qwen3.6-a3b-35b-nvfp4",
+        "llm_model": "spark/qwen3.6-a3b-35b-nvfp4",
         "diarization_path": "/diarizer/v1/audio/diarizations",
     },
     "ssh": {
