@@ -19,6 +19,7 @@ import wave
 
 import httpx
 
+from . import echo
 from .config import LOCAL_ASR_DEFAULT_LANGUAGE
 from .connections import bearer_headers, get_connection
 from .models import get_local_asr
@@ -302,19 +303,54 @@ def wav_channels(wav_path):
         return 1
 
 
-@contextlib.contextmanager
-def channel_wav(wav_path, index):
-    """Yield one channel of a multi-track recording as its own mono wav."""
-    with tempfile.TemporaryDirectory() as tmp:
-        out = Path(tmp) / f"channel{index}.wav"
+def _echo_free_mic(wav_path, out):
+    """Write the recording's microphone track without speaker echo to ``out``.
+
+    False when that is not possible or not needed: no speexdsp, no system
+    track to cancel against, or a microphone that never heard the speakers.
+    """
+    if not echo.available() or wav_channels(wav_path) < 2:
+        return False
+    mic, system = out.with_name("mic.s16"), out.with_name("system.s16")
+    rate = str(echo.SAMPLE_RATE)
+    try:
         subprocess.run(
             [
-                "ffmpeg", "-y", "-i", str(wav_path), "-vn",
-                "-filter_complex", f"pan=mono|c0=c{index}",
-                "-c:a", "pcm_s16le", str(out),
+                "ffmpeg", "-y", "-i", str(wav_path), "-vn", "-filter_complex",
+                "[0:a]asplit=2[a][b];[a]pan=mono|c0=c0[mic];[b]pan=mono|c0=c1[sys]",
+                "-map", "[mic]", "-ar", rate, "-f", "s16le", str(mic),
+                "-map", "[sys]", "-ar", rate, "-f", "s16le", str(system),
             ],
             check=True, capture_output=True, text=True,
         )
+        return echo.cancel(mic, system, out)
+    except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+        log.warning("Echo cancellation failed; using the microphone track as recorded: %s", exc)
+        return False
+    finally:
+        mic.unlink(missing_ok=True)
+        system.unlink(missing_ok=True)
+
+
+@contextlib.contextmanager
+def channel_wav(wav_path, index):
+    """Yield one channel of a multi-track recording as its own mono wav.
+
+    The microphone track comes without the speakers' echo of the system
+    track. Left in, the far end's speech reached both the transcript and the
+    diarizer a second time, as if someone in the room had repeated it.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / f"channel{index}.wav"
+        if CHANNEL_LABELS[index] != "mic" or not _echo_free_mic(wav_path, out):
+            subprocess.run(
+                [
+                    "ffmpeg", "-y", "-i", str(wav_path), "-vn",
+                    "-filter_complex", f"pan=mono|c0=c{index}",
+                    "-c:a", "pcm_s16le", str(out),
+                ],
+                check=True, capture_output=True, text=True,
+            )
         yield out
 
 

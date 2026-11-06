@@ -26,6 +26,11 @@ mix. Each track is transcribed on its own pass, so room reverb from the
 microphone never degrades the clean loopback copy of what plays on the machine,
 and speaker labels are namespaced per track (`MIC_SPEAKER_00`,
 `SYSTEM_SPEAKER_00`). A track that stayed silent is skipped, not transcribed.
+Without headphones the microphone also picks up the speakers. Before the
+microphone track is transcribed or diarized, SIT subtracts that echo using the
+system track as the reference (via the system `speexdsp` library), so the far
+end is not transcribed a second time as someone in the room. Without
+`speexdsp` the microphone track stays as recorded.
 
 Both ends of that pair are chosen in the UI: the microphone, and the output
 whose monitor becomes the system track (defaulting to the current default
@@ -179,7 +184,7 @@ Then, inside the Ubuntu distribution (WSL ships Ubuntu by default):
 
 ```bash
 sudo apt update
-sudo apt install -y git curl python3 python3-venv ffmpeg pulseaudio-utils
+sudo apt install -y git curl python3 python3-venv ffmpeg pulseaudio-utils libspeexdsp1
 
 # Only for the native window; the browser needs no build dependencies.
 sudo apt install -y build-essential pkg-config libwebkit2gtk-4.1-dev \
@@ -223,7 +228,7 @@ SSH tunnels connect by themselves once you are on the VPN.
 ### 2. Fedora
 
 ```bash
-sudo dnf install -y git curl python3 python3-pip ffmpeg-free pulseaudio-utils
+sudo dnf install -y git curl python3 python3-pip ffmpeg-free pulseaudio-utils speexdsp
 
 # Only for the native window:
 sudo dnf install -y @development-tools pkgconf-pkg-config webkit2gtk4.1-devel \
@@ -239,7 +244,7 @@ PipeWire with PipeWire-Pulse, which is what the recorder needs;
 
 ```bash
 sudo apt update
-sudo apt install -y git curl python3 python3-venv ffmpeg pulseaudio-utils
+sudo apt install -y git curl python3 python3-venv ffmpeg pulseaudio-utils libspeexdsp1
 
 # Only for the native window:
 sudo apt install -y build-essential pkg-config libwebkit2gtk-4.1-dev \
@@ -255,7 +260,7 @@ native window — use the browser instead.
 ### 4. Arch Linux
 
 ```bash
-sudo pacman -S --needed git curl python uv ffmpeg libpulse
+sudo pacman -S --needed git curl python uv ffmpeg libpulse speexdsp
 
 # Only for the native window:
 sudo pacman -S --needed base-devel pkgconf webkit2gtk-4.1 openssl \
