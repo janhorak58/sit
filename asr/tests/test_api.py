@@ -1,5 +1,6 @@
 import importlib.util
 import io
+import signal
 import wave
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,9 +10,9 @@ import pytest
 
 
 MODULE_PATH = Path(__file__).parents[1] / "app.py"
-spec = importlib.util.spec_from_file_location("canary_app", MODULE_PATH)
-canary = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(canary)
+spec = importlib.util.spec_from_file_location("asr_app", MODULE_PATH)
+service = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(service)
 
 
 @pytest.fixture
@@ -21,7 +22,7 @@ def anyio_backend():
 
 @pytest.fixture
 def transport():
-    return httpx.ASGITransport(app=canary.create_app())
+    return httpx.ASGITransport(app=service.create_app())
 
 
 def wav_bytes(seconds=0.5, sample_rate=16000):
@@ -37,21 +38,21 @@ def wav_bytes(seconds=0.5, sample_rate=16000):
 
 @pytest.mark.anyio
 async def test_health_and_model_discovery_do_not_load_model(monkeypatch, transport):
-    monkeypatch.setattr(canary, "_model", None)
+    monkeypatch.setattr(service, "_model", None)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         health = await client.get("/health")
         models = await client.get("/v1/models")
 
     assert health.json() == {
         "ok": True,
-        "model": canary.MODEL_ID,
-        "device": canary.DEVICE,
+        "model": service.MODEL_ID,
+        "device": service.DEVICE,
         "loaded": False,
     }
     # The client probes /v1/models to decide whether the remote engine is usable.
     assert models.json() == {
         "object": "list",
-        "data": [{"id": canary.MODEL_ID, "object": "model"}],
+        "data": [{"id": service.MODEL_ID, "object": "model"}],
     }
 
 
@@ -68,12 +69,12 @@ async def test_transcription_returns_verbose_json_the_client_can_stitch(monkeypa
                 SimpleNamespace(start=2.0, end=2.4, text="Druhá věta."),
             ])
 
-    monkeypatch.setattr(canary, "get_model", lambda: Model())
+    monkeypatch.setattr(service, "get_model", lambda: Model())
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/v1/audio/transcriptions",
             files={"file": ("chunk.wav", wav_bytes(), "audio/wav")},
-            data={"model": "nemo-canary-1b-v2", "response_format": "verbose_json", "language": "cs"},
+            data={"model": "onnx-community/whisper-large-v3-turbo", "response_format": "verbose_json", "language": "cs"},
         )
 
     assert response.status_code == 200
@@ -86,7 +87,7 @@ async def test_transcription_returns_verbose_json_the_client_can_stitch(monkeypa
     assert body["text"] == "Ahoj světe. Druhá věta."
     # Duration comes from the decoded audio, not from the last segment's end.
     assert body["duration"] == 0.5
-    assert body["model"] == canary.MODEL_ID
+    assert body["model"] == service.MODEL_ID
     assert seen["samples"] == 8000
     assert seen["kwargs"]["language"] == "cs"
     assert seen["kwargs"]["pnc"] is True
@@ -102,7 +103,7 @@ async def test_missing_language_falls_back_to_the_configured_default(monkeypatch
             seen.update(kwargs)
             return iter([])
 
-    monkeypatch.setattr(canary, "get_model", lambda: Model())
+    monkeypatch.setattr(service, "get_model", lambda: Model())
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/v1/audio/transcriptions",
@@ -110,14 +111,14 @@ async def test_missing_language_falls_back_to_the_configured_default(monkeypatch
         )
 
     assert response.status_code == 200
-    assert seen["language"] == canary.DEFAULT_LANGUAGE
-    assert response.json()["language"] == canary.DEFAULT_LANGUAGE
+    assert seen["language"] == service.DEFAULT_LANGUAGE
+    assert response.json()["language"] == service.DEFAULT_LANGUAGE
 
 
 @pytest.mark.anyio
 async def test_undecodable_audio_fails_before_the_model_is_loaded(monkeypatch, transport):
     monkeypatch.setattr(
-        canary,
+        service,
         "get_model",
         lambda: (_ for _ in ()).throw(AssertionError("model should not load")),
     )
@@ -134,7 +135,7 @@ async def test_undecodable_audio_fails_before_the_model_is_loaded(monkeypatch, t
 @pytest.mark.anyio
 async def test_empty_upload_is_rejected_without_loading_model(monkeypatch, transport):
     monkeypatch.setattr(
-        canary,
+        service,
         "get_model",
         lambda: (_ for _ in ()).throw(AssertionError("model should not load")),
     )
@@ -156,8 +157,32 @@ def test_cuda_request_fails_loudly_when_onnxruntime_falls_back_to_cpu(monkeypatc
         load_vad=lambda *a, **k: object(),
     )
     monkeypatch.setitem(__import__("sys").modules, "onnx_asr", fake)
-    monkeypatch.setattr(canary, "_model", None)
-    monkeypatch.setattr(canary, "DEVICE", "cuda")
+    monkeypatch.setattr(service, "_model", None)
+    monkeypatch.setattr(service, "DEVICE", "cuda")
 
     with pytest.raises(RuntimeError, match="fell back to CPU"):
-        canary.get_model()
+        service.get_model()
+
+
+def test_idle_exit_waits_for_a_loaded_model_and_finished_requests(monkeypatch):
+    clock = [1000.0]
+    signals = []
+    monkeypatch.setattr(service.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(service.os, "kill", lambda pid, sig: signals.append(sig))
+    monkeypatch.setattr(service, "IDLE_EXIT_SECONDS", 60.0)
+
+    # An empty process after a restart must stay up, or it would restart forever.
+    monkeypatch.setattr(service, "_model", None)
+    assert service._idle_seconds() is None
+
+    monkeypatch.setattr(service, "_model", object())
+    with service._activity():
+        clock[0] += 3600
+        # A long request in flight is not idleness, however long it runs.
+        assert service._idle_seconds() is None
+    clock[0] += 59
+    assert service._idle_seconds() == 59
+
+    clock[0] += 1
+    service._exit_when_idle()
+    assert signals == [signal.SIGTERM]

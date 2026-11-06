@@ -2,7 +2,7 @@
 
 The work Spark endpoint is OpenAI-compatible. A fast probe decides whether to
 send the audio there, as 15-minute 32 kbps mp3 chunks (the endpoint caps upload
-size). Any probe or transcription failure falls back to the local Canary
+size). Any probe or transcription failure falls back to the local Whisper
 model; an unavailable work endpoint never blocks transcription.
 """
 import array
@@ -20,7 +20,7 @@ import wave
 import httpx
 
 from .config import LOCAL_ASR_DEFAULT_LANGUAGE
-from .connections import get_connection
+from .connections import bearer_headers, get_connection
 from .models import get_local_asr
 
 log = logging.getLogger(__name__)
@@ -54,12 +54,13 @@ class Transcript:
 
 def remote_status():
     """Return public backend state without leaking internal endpoint details."""
-    endpoint = get_connection("transcription")["endpoint"]
+    connection = get_connection("transcription")
+    endpoint = connection["endpoint"]
     if not endpoint:
         return {"available": False, "backend": "local", "label": LOCAL_LABEL}
     try:
         base = endpoint.removesuffix("/v1/audio/transcriptions").rstrip("/")
-        response = httpx.get(f"{base}/v1/models", timeout=2.0)
+        response = httpx.get(f"{base}/v1/models", headers=bearer_headers(connection), timeout=2.0)
         if response.is_success:
             return {"available": True, "backend": "spark", "label": REMOTE_LABEL}
     except (httpx.HTTPError, OSError):
@@ -155,6 +156,7 @@ def _post_audio(path, language, timeout=3600.0, mime="audio/mpeg"):
             connection["endpoint"],
             data=data,
             files={"file": (path.name, audio, mime)},
+            headers=bearer_headers(connection),
             timeout=timeout,
         )
     response.raise_for_status()
@@ -207,7 +209,7 @@ def _wav_duration(wav_path):
 
 
 def _local_transcribe(wav_path, language, on_segment):
-    """Canary over VAD-cut speech windows; silence never reaches the model.
+    """Whisper over VAD-cut speech windows; silence never reaches the model.
 
     The language is always passed. Left to auto-detection, per-window language
     identification makes Czech recordings drift into Slovak and English.
@@ -228,7 +230,7 @@ def _local_transcribe(wav_path, language, on_segment):
     return Transcript(segments, duration, "local")
 
 
-# The remote Canary build answers with verbose_json but without per-segment
+# The remote ASR service answers with verbose_json but without per-segment
 # confidences, so silence-hallucinations ("Dekuji." into a pause) survive the
 # logprob filter. Their giveaway is loudness: they sit far below the level of
 # anything actually spoken into the microphone. The thresholds are deliberately
@@ -457,6 +459,7 @@ def diagnose():
     report = {
         "url": connection["endpoint"],
         "model": connection["model"],
+        "api_key": bool(connection.get("api_key")),
         "probe": remote_status(),
         "last_error": _last_remote_error,
     }

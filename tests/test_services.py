@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import httpx
 import json
+import pytest
 
 from transcriber import asr
 from transcriber.errors import AppError
@@ -830,6 +831,45 @@ def test_remote_error_body_under_http_200_falls_back_to_local(monkeypatch, tmp_p
     monkeypatch.setattr(asr, "_local_transcribe", lambda *a: asr.Transcript([], 0, "local"))
 
     assert asr.transcribe(wav, "cs").backend == "local"
+
+
+@pytest.mark.parametrize(("key", "expected"), [("sk-gateway", {"Authorization": "Bearer sk-gateway"}), ("", None)])
+def test_remote_asr_sends_bearer_key_only_when_one_is_stored(monkeypatch, tmp_path, key, expected):
+    connection = {"endpoint": "http://127.0.0.1:8208/v1/audio/transcriptions", "model": "whisper", "api_key": key}
+    monkeypatch.setattr(asr, "get_connection", lambda name: connection)
+    seen = {}
+    monkeypatch.setattr(asr.httpx, "get", lambda url, **k: (
+        seen.update(probe=k.get("headers")), SimpleNamespace(is_success=True))[1])
+    monkeypatch.setattr(asr.httpx, "post", lambda url, **k: (seen.update(upload=k.get("headers")), SimpleNamespace(
+        raise_for_status=lambda: None, json=lambda: {"duration": 1.0, "segments": []},
+    ))[1])
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"RIFF")
+
+    assert asr.remote_status()["available"] is True
+    asr._post_audio(audio, "cs")
+    assert seen == {"probe": expected, "upload": expected}
+
+
+@pytest.mark.parametrize(("key", "expected"), [("sk-gateway", {"Authorization": "Bearer sk-gateway"}), ("", None)])
+def test_remote_diarizer_sends_bearer_key_only_when_one_is_stored(monkeypatch, tmp_path, key, expected):
+    from transcriber import pipeline
+
+    connection = {"endpoint": "http://127.0.0.1:8299/v1/audio/diarizations", "local_model": "p", "api_key": key}
+    monkeypatch.setattr(pipeline, "get_connection", lambda name: connection)
+    seen = {}
+    monkeypatch.setattr(pipeline.httpx, "get", lambda url, **k: (seen.update(probe=k.get("headers")), SimpleNamespace(
+        raise_for_status=lambda: None, json=lambda: {"ok": True},
+    ))[1])
+    monkeypatch.setattr(pipeline.httpx, "post", lambda url, **k: (seen.update(upload=k.get("headers")), SimpleNamespace(
+        raise_for_status=lambda: None, json=lambda: {"segments": [{"start": 0, "end": 1, "speaker": "A"}]},
+    ))[1])
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"RIFF")
+
+    assert pipeline.remote_diarizer_status()["available"] is True
+    pipeline._remote_speaker_turns(audio, None)
+    assert seen == {"probe": expected, "upload": expected}
 
 
 def test_meeting_json_records_engine_provenance(monkeypatch, tmp_path):

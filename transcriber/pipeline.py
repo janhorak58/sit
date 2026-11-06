@@ -10,7 +10,7 @@ import threading
 
 from .asr import CHANNEL_LABELS, LOCAL_LABEL, REMOTE_LABEL, Segment, channel_wav, transcribe
 from .config import LOCAL_ASR_DEVICE, LOCAL_ASR_MODEL
-from .connections import get_connection
+from .connections import bearer_headers, get_connection
 from .library import atomic_write_text, meeting_json_path_for
 from .models import get_diarize_pipeline
 from .paths import rel_to_data
@@ -139,12 +139,13 @@ def load_waveform(path):
 def remote_diarizer_status():
     """Probe the configured Spark diarizer without loading the local model."""
     global _last_remote_diarization_error
-    endpoint = get_connection("diarization")["endpoint"]
+    connection = get_connection("diarization")
+    endpoint = connection["endpoint"]
     if not endpoint:
         return {"available": False, "backend": "local", "off": True, "last_error": None}
     health_url = endpoint.removesuffix("/v1/audio/diarizations").rstrip("/") + "/health"
     try:
-        response = httpx.get(health_url, timeout=2.0)
+        response = httpx.get(health_url, headers=bearer_headers(connection), timeout=2.0)
         response.raise_for_status()
         body = response.json()
 
@@ -168,12 +169,14 @@ def remote_diarizer_status():
 
 
 def _remote_speaker_turns(wav_path, num_speakers):
+    connection = get_connection("diarization")
     data = {"num_speakers": str(num_speakers)} if num_speakers else {}
     with wav_path.open("rb") as audio:
         response = httpx.post(
-            get_connection("diarization")["endpoint"],
+            connection["endpoint"],
             data=data,
             files={"file": (wav_path.name, audio, "audio/wav")},
+            headers=bearer_headers(connection),
             timeout=3600.0,
         )
     response.raise_for_status()
@@ -183,7 +186,7 @@ def _remote_speaker_turns(wav_path, num_speakers):
     turns = body.get("segments")
     if not turns:
         raise ValueError("Spark diarizer returned no segments.")
-    return turns, body.get("model") or get_connection("diarization")["local_model"]
+    return turns, body.get("model") or connection["local_model"]
 
 
 def _local_speaker_turns(wav_path, num_speakers):

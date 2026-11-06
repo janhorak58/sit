@@ -3,8 +3,8 @@ FROM ${BASE_IMAGE}
 
 ENV PYTHONUNBUFFERED=1 \
     HF_HOME=/models/huggingface \
-    CANARY_MODEL=nemo-canary-1b-v2 \
-    CANARY_DEVICE=cuda
+    ASR_MODEL=onnx-community/whisper-large-v3-turbo \
+    ASR_DEVICE=cuda
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv ffmpeg curl \
@@ -37,7 +37,7 @@ print('onnxruntime', ort.__version__, providers)"
 COPY app.py .
 
 EXPOSE 8000
-# Model load pulls ~4 GB on first start, hence the generous start period.
+# Model load pulls ~3.3 GB on first start, hence the generous start period.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=600s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8000/health >/dev/null || exit 1
 

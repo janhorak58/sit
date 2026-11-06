@@ -7,3 +7,5 @@ uvicorn[standard]
 onnx-asr[cpu,hub]
 httpx
 python-dotenv
+# AI analysis PDF export (pure Python).
+fpdf2

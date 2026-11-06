@@ -5,6 +5,9 @@ let currentConnections = null;
 
 // Known remote failures mapped to the one thing that actually fixes them.
 const HINTS = [
+  [/401|Unauthorized|Virtual Key/i,
+    'The server rejected the API key.',
+    'Paste a valid LiteLLM key (it starts with sk-) and check that the key may use this model.'],
   [/vllm\[audio\]/i,
     'The remote transcription service cannot process audio right now, so this computer is transcribing instead.',
     'The server is missing vLLM audio support: run pip install vllm[audio] there and restart it.'],
@@ -14,6 +17,9 @@ const HINTS = [
   [/Connection refused|ConnectError|timed out/i,
     'This computer cannot reach the configured remote address.',
     'Check the SSH tunnel, VPN, host, and port.'],
+  [/404.*\/diarizer\//s,
+    'The LiteLLM server has no speaker recognition route yet, so this computer recognizes speakers instead.',
+    'Add a LiteLLM pass-through endpoint /diarizer that points at the pyannote service, or clear the speaker recognition path in Advanced.'],
   [/404|Not Found/i,
     'The remote server was reached, but it does not recognize the configured address.',
     'The configured API path does not exist on that server.'],
@@ -64,6 +70,15 @@ function fillConnectionForm(connections) {
     else if (field.type === 'number') field.value = value ? String(value) : '';
     else field.value = value ?? '';
   });
+  showMode();
+}
+
+// The gateway replaces every per-service setting, so only one of the two
+// setups is ever on screen.
+function showMode() {
+  const viaGateway = $('gateway-enabled').checked;
+  $('gateway-fields').hidden = !viaGateway;
+  $('own-servers').hidden = viaGateway;
 }
 
 function showEndpoints(endpoints) {
@@ -75,24 +90,30 @@ function showEndpoints(endpoints) {
 
 // The backend never sends stored secrets back, so an untouched field means
 // "keep what is stored"; clearing one needs its explicit checkbox.
+const API_KEY_OWNERS = ['gateway', 'transcription', 'diarization', 'llm'];
+
 function showSecrets(connections) {
   $('hf-token-state').textContent = connections?.diarization?.hf_token_set
     ? 'A token is stored. Type a new one to replace it.'
     : 'No token stored. The local pyannote fallback needs one for gated models.';
-  $('llm-api-key-state').textContent = connections?.llm?.api_key_set
-    ? 'A key is stored. Type a new one to replace it.'
-    : 'No key stored. Set one if the server answers 401 Unauthorized.';
+  API_KEY_OWNERS.forEach(name => {
+    $(`${name}-api-key-state`).textContent = connections?.[name]?.api_key_set
+      ? 'A key is stored. Type a new one to replace it.'
+      : name === 'gateway'
+        ? 'No key stored. Ask the LiteLLM administrator for a personal key.'
+        : 'No key stored. Set one if the server answers 401 Unauthorized.';
+    $(`forget-${name}-api-key`).checked = false;
+  });
   document.querySelectorAll('#connections-form [data-connection-secret]').forEach(field => {
     field.value = '';
   });
   $('forget-hf-token').checked = false;
-  $('forget-llm-api-key').checked = false;
 }
 
 function readConnectionForm() {
   const next = currentConnections ? structuredClone(currentConnections) : {};
   delete next.diarization?.hf_token_set;
-  delete next.llm?.api_key_set;
+  API_KEY_OWNERS.forEach(name => delete next[name]?.api_key_set);
   document.querySelectorAll('#connections-form [data-connection-path]').forEach(field => {
     at(next, field.dataset.connectionPath, field.type === 'checkbox' ? field.checked : field.value);
   });
@@ -100,11 +121,19 @@ function readConnectionForm() {
     at(next, field.dataset.connectionSecret, field.value.trim());
   });
   next.forget_hf_token = $('forget-hf-token').checked;
-  next.forget_llm_api_key = $('forget-llm-api-key').checked;
+  API_KEY_OWNERS.forEach(name => {
+    next[`forget_${name}_api_key`] = $(`forget-${name}-api-key`).checked;
+  });
   return next;
 }
 
-function tunnelCards(ssh) {
+function tunnelCards(ssh, gateway) {
+  if (gateway?.enabled) {
+    return [card('LiteLLM server', [
+      row('Address', gateway.url),
+      row('API key', gateway.api_key ? 'Saved' : 'Not set', gateway.api_key ? 'ok' : 'bad'),
+    ])];
+  }
   if (!ssh?.enabled) {
     return [card('SSH tunnels', [
       row('Status', 'Disabled — endpoints are used directly'),
@@ -131,9 +160,11 @@ async function loadConnectionForm() {
   fillConnectionForm(currentConnections);
   showEndpoints(result.endpoints);
   showSecrets(currentConnections);
-  status.textContent = result.tunnels?.enabled
-    ? 'Managed SSH is enabled. Saving restarts its tunnels.'
-    : 'Enable managed SSH to connect automatically when SIT starts.';
+  status.textContent = currentConnections.gateway?.enabled
+    ? 'SIT talks to the LiteLLM server directly. No SSH needed.'
+    : result.tunnels?.enabled
+      ? 'Managed SSH is enabled. Saving restarts its tunnels.'
+      : 'Enable managed SSH to connect automatically when SIT starts.';
 }
 
 async function loadDiagnostics() {
@@ -153,11 +184,12 @@ async function loadDiagnostics() {
   const hint = ok ? null : hintFor(upload.detail || remote.last_error);
 
   const cards = [
-    ...tunnelCards(j.ssh),
+    ...tunnelCards(j.ssh, j.gateway),
     card('Remote transcription', [
       row('Status', ok ? 'Working — using the remote engine' : 'Unavailable — using the engine on this computer', ok ? 'ok' : 'bad'),
       row('Address', remote.url),
       row('Model', remote.model),
+      row('API key', remote.api_key ? 'Saved' : 'Not set'),
       row('Server has this model', remote.probe && remote.probe.available ? 'Yes' : 'Could not confirm', remote.probe && remote.probe.available ? 'ok' : 'bad'),
       row('Connection test', upload.detail),
       row('Last error', remote.last_error),
@@ -182,6 +214,7 @@ async function loadDiagnostics() {
         diarization.hf_token ? 'Saved' : 'Not set',
         diarization.hf_token ? 'ok' : 'bad',
       ),
+      row('API key for remote engine', diarization.api_key ? 'Saved' : 'Not set'),
       ...(diarizationRemote.last_error ? [el('p', {
         className: 'sethint',
         textContent: '→ Remote speaker recognition: ' + diarizationRemote.last_error,
@@ -221,32 +254,40 @@ function tunnelErrorFor(diagnostics, name) {
   return host && host.state !== 'running' ? host.error || 'SSH tunnel is not running.' : null;
 }
 
+// A failure reads as its plain hint when one is known. The raw detail still
+// shows in the diagnostics below.
+function failure(text) {
+  return {ok: false, text: hintFor(text)?.plain || text};
+}
+
 function serviceReport(diagnostics, name) {
   const tunnel = tunnelErrorFor(diagnostics, name);
-  if (tunnel) return {ok: false, text: tunnel};
+  if (tunnel) return failure(tunnel);
   if (name === 'transcription') {
     const upload = diagnostics.remote?.upload || {};
     return upload.ok
       ? {ok: true, text: 'Working — ' + upload.detail}
-      : {ok: false, text: upload.detail || 'Endpoint did not accept a test upload.'};
+      : failure(upload.detail || 'Endpoint did not accept a test upload.');
   }
   if (name === 'diarization') {
     const remote = diagnostics.diarization?.remote || {};
     return remote.available
       ? {ok: true, text: 'Working — ' + [remote.model, remote.device].filter(Boolean).join(' on ')}
-      : {ok: false, text: remote.last_error || 'Endpoint is not responding; speakers fall back to the local model.'};
+      : failure(remote.last_error || 'Endpoint is not responding; speakers fall back to the local model.');
   }
   const analysis = diagnostics.analysis || {};
   return analysis.available
     ? {ok: true, text: 'Working — ' + analysis.model}
-    : {ok: false, text: analysis.last_error || 'Endpoint is not responding.'};
+    : failure(analysis.last_error || 'Endpoint is not responding.');
 }
 
-// `pending` drives the spinner next to whichever button is working.
+// `pending` drives the spinner next to whichever button is working. A service
+// reports on its own card and in the gateway summary, whichever is visible.
 function showResult(name, state, text) {
-  const target = $('result-' + name);
-  target.className = 'connection-result' + (state ? ' ' + state : '');
-  target.textContent = text;
+  document.querySelectorAll(`[data-result="${name}"]`).forEach(target => {
+    target.className = 'connection-result' + (state ? ' ' + state : '');
+    target.textContent = text;
+  });
 }
 
 function busy(button, name, text) {
@@ -276,6 +317,7 @@ export function initSettings() {
     await loadDiagnostics();
     button.disabled = false;
   };
+  $('gateway-enabled').onchange = showMode;
   $('ssh-test').onclick = async () => {
     const button = $('ssh-test');
     busy(button, 'ssh', 'Signing in over SSH…');
@@ -327,10 +369,11 @@ export function initSettings() {
       status.className = 'status-line' + (pending ? ' pending' : '');
       status.textContent = text;
     };
+    const viaGateway = $('gateway-enabled').checked;
     button.disabled = true;
     button.setAttribute('aria-busy', 'true');
-    say('Saving and opening tunnels…', true);
-    names.forEach(name => showResult(name, 'pending', 'Waiting for the tunnel…'));
+    say(viaGateway ? 'Saving…' : 'Saving and opening tunnels…', true);
+    names.forEach(name => showResult(name, 'pending', viaGateway ? 'Waiting…' : 'Waiting for the tunnel…'));
     try {
       const result = await applyConnections();
       if (result.error) {
@@ -342,7 +385,9 @@ export function initSettings() {
       broken.forEach(host => (host.services || []).forEach(
         name => showResult(name, 'bad', host.host + ': ' + (host.error || 'SSH tunnel is not running.')),
       ));
-      say(broken.length ? 'Some SSH tunnels are down. Testing the rest…' : 'Tunnels are up. Testing every service…', true);
+      say(broken.length
+        ? 'Some SSH tunnels are down. Testing the rest…'
+        : viaGateway ? 'Testing every service…' : 'Tunnels are up. Testing every service…', true);
       names.filter(name => !broken.some(host => (host.services || []).includes(name)))
         .forEach(name => showResult(name, 'pending', 'Testing the service…'));
       const diagnostics = await api.diagnostics();

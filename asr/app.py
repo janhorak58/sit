@@ -1,33 +1,46 @@
-"""GPU-backed Canary speech-to-text HTTP service.
+"""GPU-backed speech-to-text HTTP service (Whisper large-v3-turbo by default).
 
 OpenAI-compatible on purpose: the transcriber client posts multipart audio to
 `/v1/audio/transcriptions` and probes `/v1/models`, so this service can be
 swapped in wherever a Whisper endpoint was configured. Recognition runs through
-onnx-asr (ONNX Runtime), the same runtime the client uses locally for Parakeet,
-so there is one inference stack to reason about instead of two.
+onnx-asr (ONNX Runtime), the same runtime the client uses locally, so there is
+one inference stack to reason about instead of two.
 """
 
+import contextlib
 import os
+import signal
 import subprocess
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 from anyio import to_thread
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 
-MODEL_ID = os.environ.get("CANARY_MODEL", "nemo-canary-1b-v2")
+MODEL_ID = os.environ.get("ASR_MODEL", "onnx-community/whisper-large-v3-turbo")
 # Empty = full precision. int8 halves VRAM at a small accuracy cost.
-QUANTIZATION = os.environ.get("CANARY_QUANTIZATION", "")
-DEVICE = os.environ.get("CANARY_DEVICE", "cuda")
-VAD_MODEL = os.environ.get("CANARY_VAD_MODEL", "silero")
-# Canary is an attention encoder-decoder: long windows cost quadratic attention
-# and drift, so VAD cuts speech into windows of at most this many seconds.
-WINDOW_SECONDS = float(os.environ.get("CANARY_WINDOW_SECONDS", "30"))
+QUANTIZATION = os.environ.get("ASR_QUANTIZATION", "")
+DEVICE = os.environ.get("ASR_DEVICE", "cuda")
+VAD_MODEL = os.environ.get("ASR_VAD_MODEL", "silero")
+# Whisper reads at most 30 s per pass and attention decoding drifts on long
+# windows, so VAD cuts speech into windows of at most this many seconds.
+WINDOW_SECONDS = float(os.environ.get("ASR_WINDOW_SECONDS", "30"))
+# Cut speech only at pauses at least this long. Silero's 100 ms default shreds
+# read Czech into sub-second scraps: on a Hamlet test WER fell from 37 % at
+# 100 ms to 21 % at 1000 ms.
+MIN_SILENCE_MS = float(os.environ.get("ASR_MIN_SILENCE_MS", "1000"))
 # Windows recognized in one forward pass; raise it to trade VRAM for throughput.
-BATCH_SIZE = int(os.environ.get("CANARY_BATCH_SIZE", "8"))
-DEFAULT_LANGUAGE = os.environ.get("CANARY_DEFAULT_LANGUAGE", "cs")
+BATCH_SIZE = int(os.environ.get("ASR_BATCH_SIZE", "8"))
+DEFAULT_LANGUAGE = os.environ.get("ASR_DEFAULT_LANGUAGE", "cs")
 PRELOAD_MODEL = os.environ.get("PRELOAD_MODEL", "1").lower() not in {"0", "false", "no"}
+# Exit once the loaded model has gone this many seconds without a request, so
+# its GPU memory goes back to the host between meetings. Only process exit
+# frees all of it: the CUDA context lives as long as the process does. Compose
+# restarts the container empty and the next request loads the model again.
+# 0 keeps the model loaded for good.
+IDLE_EXIT_SECONDS = float(os.environ.get("IDLE_EXIT_SECONDS", "0"))
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(2 * 1024**3)))
 SAMPLE_RATE = 16000
 
@@ -40,6 +53,45 @@ _model = None
 _load_lock = threading.Lock()
 # One GPU, one graph: concurrent sessions would multiply VRAM and thrash.
 _inference_lock = threading.Lock()
+_activity_lock = threading.Lock()
+_active_requests = 0
+_last_activity = time.monotonic()
+
+
+@contextlib.contextmanager
+def _activity():
+    """Mark a model request in flight; the idle clock restarts when it ends."""
+    global _active_requests, _last_activity
+    with _activity_lock:
+        _active_requests += 1
+    try:
+        yield
+    finally:
+        with _activity_lock:
+            _active_requests -= 1
+            _last_activity = time.monotonic()
+
+
+def _idle_seconds():
+    """How long the loaded model has sat unused, or None while it is needed."""
+    with _activity_lock:
+        if _model is None or _active_requests:
+            return None
+        return time.monotonic() - _last_activity
+
+
+def _exit_when_idle():
+    """SIGTERM this process once the model idles past IDLE_EXIT_SECONDS.
+
+    uvicorn treats SIGTERM as a graceful shutdown: it stops accepting new
+    connections and lets a request that slipped in after the check finish.
+    """
+    while True:
+        idle = _idle_seconds()
+        if idle is not None and idle >= IDLE_EXIT_SECONDS:
+            os.kill(os.getpid(), signal.SIGTERM)
+            return
+        time.sleep(min(IDLE_EXIT_SECONDS, 30.0))
 
 
 def get_model():
@@ -54,7 +106,7 @@ def get_model():
             providers = _PROVIDERS.get(DEVICE.lower())
             if providers is None:
                 raise RuntimeError(
-                    f"CANARY_DEVICE={DEVICE!r} is not supported; "
+                    f"ASR_DEVICE={DEVICE!r} is not supported; "
                     f"use {' or '.join(sorted(_PROVIDERS))}"
                 )
             model = onnx_asr.load_model(
@@ -71,13 +123,16 @@ def get_model():
                     "CUDAExecutionProvider" in session.get_providers() for session in sessions
                 ):
                     raise RuntimeError(
-                        "CANARY_DEVICE requests CUDA, but ONNX Runtime fell back to CPU; "
+                        "ASR_DEVICE requests CUDA, but ONNX Runtime fell back to CPU; "
                         "install onnxruntime-gpu matching the container's CUDA/cuDNN"
                     )
             # VAD stays on CPU: milliseconds of work, not worth a second context.
             vad = onnx_asr.load_vad(VAD_MODEL, providers=["CPUExecutionProvider"])
             _model = model.with_vad(
-                vad, max_speech_duration_s=WINDOW_SECONDS, batch_size=BATCH_SIZE
+                vad,
+                max_speech_duration_s=WINDOW_SECONDS,
+                min_silence_duration_ms=MIN_SILENCE_MS,
+                batch_size=BATCH_SIZE,
             )
     return _model
 
@@ -134,11 +189,16 @@ async def _save_upload(upload: UploadFile, path: Path):
 
 
 def create_app():
-    app = FastAPI(title="Canary Transcription Service", version="1.0")
+    app = FastAPI(title="ASR Transcription Service", version="1.0")
 
     @app.on_event("startup")
-    def preload_model():
-        if PRELOAD_MODEL:
+    def startup():
+        # Preloading under idle exit would reload the model after every
+        # restart and drop it again IDLE_EXIT_SECONDS later, holding the GPU
+        # memory most of the time; the first request loads it instead.
+        if IDLE_EXIT_SECONDS > 0:
+            threading.Thread(target=_exit_when_idle, name="idle-exit", daemon=True).start()
+        elif PRELOAD_MODEL:
             get_model()
 
     @app.get("/health")
@@ -163,9 +223,10 @@ def create_app():
             with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp:
                 temp_path = Path(temp.name)
             await _save_upload(file, temp_path)
-            segments, duration = await to_thread.run_sync(
-                _run_transcription, temp_path, language
-            )
+            with _activity():
+                segments, duration = await to_thread.run_sync(
+                    _run_transcription, temp_path, language
+                )
             return {
                 "model": MODEL_ID,
                 "language": language or DEFAULT_LANGUAGE,

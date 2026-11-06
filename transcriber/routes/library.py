@@ -1,9 +1,13 @@
+from pathlib import PurePosixPath
+from urllib.parse import quote
+
 from fastapi import APIRouter
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from .. import library
 from ..errors import AppError
 from ..paths import resolve_in_data
+from ..pdf_export import render_summary_pdf
 from ..schemas import (
     DeleteReq,
     FolderRenameReq,
@@ -50,6 +54,20 @@ def meeting(path: str):
 @router.get("/library/summary-json")
 def summary_json(path: str):
     return library.read_summary_json(path) or {}
+
+
+@router.get("/library/summary-pdf")
+def summary_pdf(path: str):
+    summary = library.read_summary_json(path)
+    if not summary:
+        raise AppError("This meeting has no AI analysis to export.")
+    title = PurePosixPath(path).stem
+    stale = bool(library.read_meeting(path).get("analysis_stale"))
+    return Response(
+        render_summary_pdf(summary, title, stale=stale),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename*=utf-8''{quote(f'{title} - AI analysis.pdf')}"},
+    )
 
 
 @router.put("/library/transcript")

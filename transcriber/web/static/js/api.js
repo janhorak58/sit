@@ -51,6 +51,7 @@ export const testSsh = connections => post('/connections/ssh-test', {connections
 export const browse = folder => get('/library/browse?path=' + encodeURIComponent(folder));
 export const readMeeting = path => get('/library/meeting?path=' + encodeURIComponent(path));
 export const readSummaryJson = path => get('/library/summary-json?path=' + encodeURIComponent(path));
+export const summaryPdfUrl = path => '/library/summary-pdf?path=' + encodeURIComponent(path);
 export const updateTranscript = async (path, segments) => body(await fetch('/library/transcript', {
   method: 'PUT',
   headers: {'Content-Type': 'application/json'},

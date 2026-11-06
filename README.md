@@ -36,15 +36,17 @@ microphones are labelled with that warning in the device list.
 
 The FastAPI backend can be opened in a browser or in a native Tauri window.
 Transcription uses a configured private ASR server, falling back to local
-Canary (CPU, ONNX) when it is unavailable — that fallback is part of the
+Whisper large-v3-turbo (CPU, ONNX) when it is unavailable — that fallback is part of the
 default install. Speaker recognition uses a remote diarizer; the local
 pyannote fallback is an **optional extra** (the only component that needs
 torch), see [Setup B](#setup-b--local-fallback-offline-capable). Summaries
 require a separate OpenAI-compatible server; there is no built-in local
 fallback for summaries. When using remote ASR/diarization, audio is sent to
 that server; the transcript is sent to the summary server when generating a
-summary. All of this is configured in the UI panel **Connections**; for purely
-local ASR, clear the transcription and diarization local ports there.
+summary. All of this is configured in the UI panel **Connections**. By
+default all three services run on one shared LiteLLM server, and its API key
+is the only field to fill in. For purely local ASR, turn the shared server off
+there and clear the transcription and diarization local ports.
 
 ## Video guides
 
@@ -294,7 +296,7 @@ uv pip install --python .venv/bin/python -r requirements.txt
 
 - Install size: **~175 MB** for the whole `.venv` (measured, Python 3.11).
 - Local ASR still works offline: `onnx-asr` + `onnxruntime` on the CPU, model
-  `nemo-canary-1b-v2` (~1 GB downloaded on first local transcription).
+  `onnx-community/whisper-large-v3-turbo` (~1.1 GB downloaded on first local transcription).
 - Speaker recognition requires a reachable diarization service (set under
   **Connections**). Without it, local speaker recognition reports that the
   optional extra is missing; the transcript is still produced, just without
@@ -327,8 +329,8 @@ uv pip install --python .venv/bin/python -r requirements-diarization.txt
   [speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) and
   [segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0).
   Models add ~100 MB to the cache.
-- For a purely local run, clear the transcription and diarization local ports
-  under **Connections**.
+- For a purely local run, turn off the shared LiteLLM server and clear the
+  transcription and diarization local ports under **Connections**.
 - pyannote 4 warns on import that `torchcodec` "is not installed correctly".
   Harmless here: SIT decodes audio with `ffmpeg` and hands pyannote an
   in-memory waveform, never using torchcodec's decoder.
@@ -509,11 +511,17 @@ are the handful of process-level variables in
 [Environment variables](#environment-variables) (library path, bind address,
 local ASR tunables), which you rarely touch.
 
-Managed SSH is the
-normal way to reach them: tick *Reach the AI services through SSH tunnels*,
-fill in the **SSH host** and **SSH user**, and press **Set up and test** —
-either the button on a service card, which reports that service's result
-inline, or the one at the bottom, which reports all three. SSH port `22`, the
+By default SIT uses the shared LiteLLM server: paste your API key into the
+**LiteLLM** card and press **Save and test**. The address, the model names and
+the speaker recognition route are prefilled under *Advanced*, and SIT reaches
+the server directly, without SSH. The key is stored like the other secrets
+(see below).
+
+For your own servers, untick *Use the shared LiteLLM server*. Managed SSH is
+then the normal way to reach them: tick *Reach the AI services through SSH
+tunnels*, fill in the **SSH host** and **SSH user**, and press **Set up and
+test** on a service card, which reports that service's result inline, or
+**Save and test** at the bottom, which reports all three. SSH port `22`, the
 local and remote ports, the API paths, and the model names are prefilled, so
 nothing else is usually needed. SIT opens the forwards itself, waits until
 each local port actually accepts connections, closes them when it quits, and
@@ -555,12 +563,13 @@ Everything else belongs in **Connections**.
 | --- | --- | --- |
 | `TRANSCRIBER_DATA_DIR` | `${XDG_DATA_HOME:-~/.local/share}/sit` | Library root; an explicit value takes precedence, `~` is expanded |
 | `TRANSCRIBER_HOST` / `TRANSCRIBER_PORT` | `127.0.0.1` / `47831` | Backend address for manual runs |
-| `LOCAL_ASR_MODEL` | `nemo-canary-1b-v2` | Local ONNX ASR model (`onnx-asr`); `nemo-parakeet-tdt-0.6b-v3` is faster but ignores the language choice |
+| `LOCAL_ASR_MODEL` | `onnx-community/whisper-large-v3-turbo` | Local ONNX ASR model (`onnx-asr`); `nemo-canary-1b-v2` also respects the language choice |
 | `LOCAL_ASR_PATH` | empty | Path to an offline model copy; empty = HuggingFace cache |
 | `LOCAL_ASR_QUANTIZATION` | `int8` | ONNX weight quantization; empty = full precision |
 | `LOCAL_ASR_DEVICE` | `cpu` | `cpu` or `cuda` (requires `onnxruntime-gpu`) |
 | `LOCAL_ASR_VAD_MODEL` | `silero` | VAD that cuts audio into windows before recognition |
 | `LOCAL_ASR_WINDOW_SECONDS` | `30` | Max window length sent to the model |
+| `LOCAL_ASR_MIN_SILENCE_MS` | `1000` | Shortest pause the VAD cuts at; shorter cuts leave scraps the model misreads |
 | `LOCAL_ASR_DEFAULT_LANGUAGE` | `cs` | Language pinned when a recording carries no explicit one |
 | `MAX_RECORDING_SECONDS` | `10800` | Maximum recording length in seconds |
 
@@ -577,12 +586,51 @@ an empty field keeps it, and "Forget the stored API key" clears it. When the
 server answers 401/403, Service diagnostics says the key was rejected instead
 of reporting the endpoint as running.
 
+Transcription and speaker recognition have the same kind of **API key**
+field. Set it when your own service sits behind a gateway such as LiteLLM.
+SIT then sends the key with every upload and with the health probe, and
+Service diagnostics shows whether a key is stored. The HuggingFace token stays
+separate, under *This computer*, because only the local pyannote fallback
+uses it.
+
+The **LiteLLM** card points all three services at one LiteLLM proxy with one
+key, and that key replaces the per-service keys and model names. SIT calls
+`<address>/v1/audio/transcriptions`, `<address>/v1/chat/completions` and
+`<address>` plus the speaker recognition path. The model fields must match
+the names LiteLLM lists in `/v1/models`, and the key must be allowed to use
+both models. LiteLLM has no diarization API, so the diarizer goes through a
+pass-through route, `/diarizer/v1/audio/diarizations` by default. Clear that
+path to recognize speakers on this computer instead. A LiteLLM config for the
+services in `asr/` and `diarizer/`:
+
+```yaml
+model_list:
+  - model_name: whisper-large-v3-turbo
+    litellm_params:
+      model: openai/whisper-large-v3-turbo
+      api_base: http://<asr-host>:8208/v1
+      api_key: none
+    model_info:
+      mode: audio_transcription
+general_settings:
+  pass_through_endpoints:
+    - path: /diarizer
+      target: http://<diarizer-host>:8299
+      include_subpath: true
+      timeout: 3600
+```
+
+Both services bind to `127.0.0.1` by default. When LiteLLM runs in a Docker
+container on the same host, set `ASR_BIND` or `DIARIZER_BIND` to the
+`docker0` address (usually `172.17.0.1`) and use it as the host above. On
+another machine, bind to an address that machine can reach.
+
 Local pyannote needs you to accept the model terms at
 [speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) and
 [segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0).
 The remote model servers are not part of the running desktop app; the
 diarization service is documented at [diarizer/README.md](diarizer/README.md),
-and the Canary ASR service at [canary/README.md](canary/README.md).
+and the ASR service at [asr/README.md](asr/README.md).
 
 The desktop launcher sets `TRANSCRIBER_PROJECT_DIR` and `TRANSCRIBER_PYTHON`
 to absolute paths. When running the binary yourself, set them in the
@@ -656,6 +704,7 @@ node tests/group_segments.mjs
 | POST | `/library/mkdir`, `/library/move`, `/library/delete` | Library edits |
 | POST | `/library/folder/rename`, `/library/folder/delete`, `/library/rename-speaker` | Renames and deletes |
 | GET | `/download` | Text output download |
+| GET | `/library/summary-pdf` | AI analysis exported as PDF |
 
 `POST /start` accepts an optional `{"language":"cs","live":true}` (`"en"` for
 English, `""` for automatic detection; `"live":false` starts recording but
