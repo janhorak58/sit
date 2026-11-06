@@ -16,6 +16,7 @@ import numpy as np
 
 from .config import AUDIO_SUBDIR, DATA_DIR, INTERNAL_TOP_DIRS
 from .errors import AppError
+from .filetimes import created_at
 from . import screen
 from .screen import screen_path_for
 from .paths import (
@@ -51,6 +52,13 @@ def _items_in(target, rel_folder):
         for p in entries if p.is_file() and p.name.endswith(".wav")
     }
     wav_map = {**legacy_wav, **wav_map}
+
+    def recorded_at(n):
+        # The earliest artifact wins: a trim replaces the wav with a new file,
+        # but the transcript made before it still dates the meeting.
+        artifacts = [wav_map.get(n), target / f"{n}.txt", target / f"{n}.meeting.json"]
+        return min(created_at(p) for p in artifacts if p is not None and p.is_file())
+
     return [{
         "name": n,
         # Folder the artifacts actually live in. Recordings kept in their own
@@ -64,6 +72,7 @@ def _items_in(target, rel_folder):
         "summary_path": rel_to_data(target / f"{n}.summary.md") if n in summary_stems else None,
         "segments": n in meeting_json_stems,
         "summary_json": n in summary_json_stems,
+        "recorded_at": recorded_at(n),
     } for n in sorted(set(txt_stems) | set(wav_map))]
 
 
@@ -101,11 +110,17 @@ def browse(rel_folder):
         child = target / name
         child_rel = f"{rel_folder}/{name}" if rel_folder else name
         if is_recording_folder(child):
-            items.extend(_items_in(child, child_rel))
+            # The folder is made just before recording and outlives a trim.
+            folder_made = created_at(child)
+            for item in _items_in(child, child_rel):
+                item["recorded_at"] = min(item["recorded_at"], folder_made)
+                items.append(item)
         else:
-            subfolders.append(name)
-    items.sort(key=lambda item: item["name"])
-    return {"folder": rel_folder, "subfolders": subfolders, "items": items}
+            subfolders.append((created_at(child), name))
+    # Newest first, by when each meeting (or folder) came to be.
+    items.sort(key=lambda item: (-item["recorded_at"], item["name"]))
+    subfolders.sort(key=lambda entry: (-entry[0], entry[1]))
+    return {"folder": rel_folder, "subfolders": [name for _, name in subfolders], "items": items}
 
 
 def make_dir(folder):
