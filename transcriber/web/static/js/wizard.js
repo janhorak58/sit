@@ -511,6 +511,12 @@ export async function prepareNewRecording() {
   selectProject(existing.some(tile => tile.dataset.project === preferred) ? preferred
     : existing.some(tile => tile.dataset.project === last) ? last : null);
 }
+
+// Transcription ends with the automatic AI correction. A correction started
+// from the meeting view belongs to that view, not to this workspace.
+const pipelineRunning = progress => ['transcribing', 'diarizing', 'merging'].includes(progress.stage)
+  || (progress.stage === 'cleaning' && progress.operation === 'transcribe');
+
 export function initWizard() {
   document.querySelectorAll('.step').forEach(button => {
     button.onclick = () => go(Number(button.dataset.step));
@@ -658,7 +664,7 @@ export function initWizard() {
     go(2);
     const progress = await api.getProgress();
     if (
-      ['transcribing', 'diarizing', 'merging'].includes(progress.stage)
+      pipelineRunning(progress)
       && progress.source_path === detail.path
     ) watchProgress();
   });
@@ -704,7 +710,7 @@ export function initWizard() {
       watchSummaryProgress();
       return;
     }
-    if (!['transcribing', 'diarizing', 'merging'].includes(progress.stage) || !progress.source_path) return;
+    if (!pipelineRunning(progress) || !progress.source_path) return;
     workspaceFromPath(progress.source_path);
     applyWorkspace();
     unlockThrough(2);

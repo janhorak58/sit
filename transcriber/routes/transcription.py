@@ -3,9 +3,9 @@ from fastapi import APIRouter
 from ..errors import AppError
 from ..library import read_meeting, transcript_path_for
 from ..paths import rel_to_data, resolve_in_data
-from ..pipeline import start_diarization, start_pipeline
+from ..pipeline import restore_recognized_text, start_cleanup, start_diarization, start_pipeline
 from ..progress import progress
-from ..schemas import DiarizeReq, TranscribeReq
+from ..schemas import CleanupReq, DiarizeReq, TranscribeReq
 
 router = APIRouter()
 
@@ -36,6 +36,27 @@ def diarize(req: DiarizeReq):
     if not start_diarization(wav_path, txt_path, req.num_speakers):
         raise AppError("Another processing step is already running.")
     return {"ok": True}
+
+
+def _timed_transcript(path):
+    if not read_meeting(path).get("segments"):
+        raise AppError("Transcript has no timed segments to correct.")
+    return resolve_in_data(path)
+
+
+@router.post("/cleanup")
+def cleanup(req: CleanupReq):
+    if not start_cleanup(_timed_transcript(req.path)):
+        raise AppError("Another processing step is already running.")
+    return {"ok": True}
+
+
+@router.post("/cleanup/revert")
+def revert_cleanup(req: CleanupReq):
+    txt_path = _timed_transcript(req.path)
+    if progress.active():
+        raise AppError("Wait until the current processing step finishes.")
+    return restore_recognized_text(txt_path)
 
 
 @router.get("/progress")

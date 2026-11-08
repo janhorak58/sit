@@ -16,7 +16,7 @@ IDLE = {
     "diarization_backend": None,
 }
 
-ACTIVE_STAGES = {"transcribing", "diarizing", "merging", "analyzing"}
+ACTIVE_STAGES = {"transcribing", "diarizing", "merging", "cleaning", "analyzing"}
 
 
 class Progress:

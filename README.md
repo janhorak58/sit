@@ -51,6 +51,16 @@ saved audio for good. An existing transcript follows it (lines outside the kept
 part are dropped, the rest shift to the new times, speaker names stay), and an
 existing AI analysis is marked outdated.
 
+After transcription, the summary server corrects the transcript cue by cue. It
+fixes misheard words, names and punctuation, and leaves timestamps and speakers
+alone. Under **Customizations → AI correction**, list names and terms the AI
+should spell correctly (for example `Škoda, Trask, AWS, SQS`), or turn off the
+automatic run. The meeting editor has **Correct with AI** for older transcripts,
+and **Restore recognized text** brings back the recognizer's text of every
+corrected cue (`original_text` in `<name>.meeting.json`). A new speaker
+recognition makes the corrected text the new base. When the server is
+unreachable, the transcript keeps the recognized text and shows a warning.
+
 On a Linux desktop with a screen-sharing portal (`xdg-desktop-portal` with a
 GNOME, KDE, Hyprland or wlroots backend) and GStreamer's PipeWire and VP8
 plugins (on Arch `gstreamer gst-plugin-pipewire gst-plugins-good`), the
@@ -736,6 +746,7 @@ node tests/group_segments.mjs
 | GET | `/recording/status`, `/progress` | Recording / processing status |
 | POST | `/upload` | Raw audio/video upload and conversion via ffmpeg |
 | POST | `/transcribe`, `/diarize` | Transcription or a fresh speaker-recognition pass |
+| POST | `/cleanup`, `/cleanup/revert` | AI correction of a transcript, or undoing it |
 | POST | `/summaries` | Summary |
 | GET | `/asr/status`, `/asr/diagnostics` | Model availability and diagnostics |
 | GET | `/projects`, `/library/browse` | Library browsing |

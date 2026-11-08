@@ -30,6 +30,10 @@ class DiarizeReq(BaseModel):
     num_speakers: int | None = None
 
 
+class CleanupReq(BaseModel):
+    path: str
+
+
 class MkdirReq(BaseModel):
     folder: str
 

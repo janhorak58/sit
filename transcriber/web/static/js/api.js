@@ -31,6 +31,8 @@ export const uploadAudio = async (file, folder, filename) => {
 export const transcribe = (path, language, num_speakers) =>
   post('/transcribe', {path, language, num_speakers});
 export const diarize = (path, num_speakers) => post('/diarize', {path, num_speakers});
+export const cleanup = path => post('/cleanup', {path});
+export const revertCleanup = path => post('/cleanup/revert', {path});
 export const getProgress = () => get('/progress');
 export const cancelJob = () => post('/progress/cancel');
 export const asrStatus = () => get('/asr/status');

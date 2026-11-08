@@ -13,6 +13,8 @@ export const hasOpenMeeting = () => meetingState !== null;
 let progressTimer = null;
 let progressRequest = 0;
 let elapsedTimer = null;
+const ACTIVE_STAGES = ['transcribing', 'diarizing', 'merging', 'cleaning', 'analyzing'];
+const OPERATION_LABELS = {summarize: 'AI analysis', diarize: 'Speaker recognition', cleanup: 'AI correction'};
 
 const PAUSE_BREAK = 2.5;
 const MAX_CHARS = 400;
@@ -177,11 +179,11 @@ function isOwnProgress(progress) {
 }
 
 function progressCard(progress) {
-  const active = isOwnProgress(progress) && ['transcribing', 'diarizing', 'merging', 'analyzing'].includes(progress.stage);
+  const active = isOwnProgress(progress) && ACTIVE_STAGES.includes(progress.stage);
   const completed = isOwnProgress(progress) && ['done', 'error'].includes(progress.stage);
   const finishedAnalysis = progress.stage === 'done' && progress.operation === 'summarize' && hasSummary(meetingState.summary);
   if ((!active && !completed) || finishedAnalysis) return null;
-  const label = progress.operation === 'summarize' ? 'AI analysis' : progress.operation === 'diarize' ? 'Speaker recognition' : 'Transcript';
+  const label = OPERATION_LABELS[progress.operation] || 'Transcript';
   const elapsed = active && meetingState.progressStartedAt ? Math.floor((Date.now() - meetingState.progressStartedAt) / 1000) : null;
   const message = (progress.message || '') + (elapsed != null ? ` (${formatTime(elapsed)} elapsed)` : '');
   const indeterminate = active && progress.operation === 'summarize';
@@ -254,7 +256,7 @@ async function refreshProgress() {
     const progress = await api.getProgress();
     if (request !== progressRequest || !meetingState) return;
     meetingState.progress = progress;
-    const active = isOwnProgress(progress) && ['transcribing', 'diarizing', 'merging', 'analyzing'].includes(progress.stage);
+    const active = isOwnProgress(progress) && ACTIVE_STAGES.includes(progress.stage);
     if (active && !meetingState.progressStartedAt) meetingState.progressStartedAt = Date.now();
     syncElapsedTimer(active);
     updateProgressDisplay();
@@ -427,6 +429,28 @@ function renderEditor() {
     saveText.textContent = 'Saved — AI analysis is marked outdated';
     window.dispatchEvent(new Event('transcriber:library-changed'));
   };
+  const correct = el('button', {className: 'small', type: 'button', textContent: 'Correct with AI'});
+  correct.disabled = !meetingState.segments.length;
+  correct.onclick = () => {
+    if (!confirm('Let AI fix misheard words, names and punctuation? Timestamps and speakers stay as they are.')) return;
+    runOperation({
+      stage: 'cleaning', operation: 'cleanup', message: 'Starting AI correction…',
+      source_path: meetingState.path, saved_path: meetingState.path,
+    }, () => api.cleanup(meetingState.path));
+  };
+  const corrected = meetingState.segments.filter(segment => 'original_text' in segment).length;
+  const restore = el('button', {className: 'small quiet', type: 'button', textContent: 'Restore recognized text'});
+  restore.onclick = async () => {
+    if (!confirm(`Return ${corrected} AI-corrected cues to the recognized text? Your edits to those cues are lost too.`)) return;
+    restore.disabled = true;
+    const result = await api.revertCleanup(meetingState.path);
+    if (result.error) { restore.disabled = false; alert('Could not restore: ' + result.error); return; }
+    meetingState.segments = result.segments;
+    meetingState.meeting.cleanup = null;
+    meetingState.meeting.analysis_stale = true;
+    renderEditor();
+    window.dispatchEvent(new Event('transcriber:library-changed'));
+  };
 
   const language = el('select', {id: 'edit-language'});
   [['cs', 'Czech'], ['en', 'English'], ['', 'Detect automatically']].forEach(([value, text]) => language.append(el('option', {value, textContent: text})));
@@ -504,7 +528,7 @@ function renderEditor() {
   });
   meetingState.speakerNotice = '';
   const tabs = [
-    ['content', 'Text & speakers', 'Transcript and speakers', 'Correct individual cues and speaker names. Saving marks the AI analysis as outdated.', [transcriptOutput, transcriptRows, el('div', {className: 'editor-action-row'}, [saveText])]],
+    ['content', 'Text & speakers', 'Transcript and speakers', 'Correct individual cues and speaker names, or let AI fix misheard words. Saving marks the AI analysis as outdated.', [transcriptOutput, transcriptRows, el('div', {className: 'editor-action-row'}, [saveText, correct, ...(corrected ? [restore] : [])])]],
     ['transcript', 'Transcript', 'Regenerate transcript', 'Run transcription again with different input parameters. This replaces the transcript and marks the analysis as outdated.', [existingOutput(`${meetingState.segments.length} transcript cues`, meetingState.segments.length ? 'ready' : 'empty', 'View current transcript', meetingState.segments.length ? () => openArtifact('TRANSCRIPT', 'Current transcript', renderTranscript) : null), el('div', {className: 'editor-options'}, [input('Language', language), input('Expected speakers', speakers)]), el('div', {className: 'editor-action-row'}, [regenerateTranscript])]],
     ['speakers', 'Speakers', 'Speaker recognition', 'Name the recognized speakers, or re-label the transcript without running speech recognition again.', [speakerOutput, ...(nameEditor ? [nameEditor] : []), el('div', {className: 'editor-options single'}, [input('Expected speakers', speakerCount)]), el('div', {className: 'editor-action-row'}, [rerunSpeakers])]],
     ['analysis', 'AI analysis', 'AI analysis', 'Choose the shape of this meeting analysis, then run it in the background.', [analysisOutput, el('div', {className: 'editor-options'}, [input('Detail', detail), input('Language', briefLanguage)]), input('Instructions for AI', prompt), sections, el('div', {className: 'editor-action-row'}, [regenerateAnalysis])]],
@@ -534,7 +558,7 @@ function renderEditor() {
   });
   selectTab(meetingState.editorTab);
   body.replaceChildren(progressSlot(), el('div', {className: 'meeting-editor'}, [navigation, ...panels]));
-  const busy = isOwnProgress(meetingState.progress || {}) && ['transcribing', 'diarizing', 'merging', 'analyzing'].includes(meetingState.progress.stage);
+  const busy = isOwnProgress(meetingState.progress || {}) && ACTIVE_STAGES.includes(meetingState.progress.stage);
   if (busy) setOperationButtons(true);
 }
 
