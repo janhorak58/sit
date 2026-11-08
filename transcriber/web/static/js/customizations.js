@@ -7,7 +7,7 @@ const LOCAL_KEY = 'sit.customizations';
 const FALLBACK = {
   profile: 'meeting',
   recording: {default_project: '', language: 'cs', microphone: '', output: '', live_enabled: false, live_chunk_seconds: '10', speaker_count: '', auto_diarize: true},
-  transcript: {show_timestamps: true, show_speakers: true, paragraph_size: 'normal', default_view: 'both'},
+  transcript: {show_timestamps: true, show_speakers: true, paragraph_size: 'normal', default_view: 'both', auto_cleanup: true, glossary: ''},
   brief: {detail: 'standard', language: 'same', compare_previous: true, user_prompt: '', sections: {chapters: true, decisions: true, action_items: true, open_questions: true, risks: true, speaker_contributions: true, follow_up: true}},
   privacy: {processing: 'auto', clear_live_drafts: true},
   export: {format: 'markdown', include_audio_links: false},

@@ -446,6 +446,76 @@ def test_run_pipeline_falls_back_when_diarization_is_unavailable(monkeypatch, tm
     assert data["segments"] == [{"start": 0, "end": 1, "text": "hello", "speaker": None, "channel": None}]
 
 
+def test_ai_correction_keeps_only_corrections_of_requested_cues(monkeypatch):
+    from transcriber import cleanup
+
+    sent = {}
+
+    def fake_post(url, **kwargs):
+        sent["prompt"] = kwargs["json"]["messages"][1]["content"]
+        answer = {"cues": [
+            {"id": 0, "text": "Jan: We moved the queues to AWS."},
+            {"id": 1, "text": "A completely different sentence about cats and dogs."},
+            {"id": 7, "text": "Not a cue of this batch."},
+        ]}
+        return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"choices": [{"message": {"content": json.dumps(answer)}}]})
+
+    monkeypatch.setattr(cleanup, "get_connection", lambda name: {"endpoint": "http://llm", "model": "qwen", "api_key": ""})
+    monkeypatch.setattr(cleanup.httpx, "post", fake_post)
+    cues = [{"text": "we moved the queues to AVS", "speaker": "Jan"}, {"text": "ok so friday then", "speaker": "Eva"}]
+
+    fixes, model = cleanup.correct_cues(cues, glossary="AWS, SQS", project="Cloud")
+
+    assert fixes == {0: "We moved the queues to AWS."}
+    assert model == "qwen"
+    assert "AWS, SQS" in sent["prompt"] and "[1] Eva: ok so friday then" in sent["prompt"]
+
+
+def test_ai_correction_is_saved_with_the_recognized_text_and_can_be_undone(monkeypatch, tmp_path):
+    from transcriber import pipeline as pipeline_module
+
+    txt_path = tmp_path / "meeting.txt"
+    monkeypatch.setattr(pipeline_module, "rel_to_data", lambda p: str(p))
+    monkeypatch.setattr(pipeline_module, "transcribe", lambda *a, **k: asr.Transcript(
+        [asr.Segment(0, 1, "we use AVS"), asr.Segment(1, 2, "fine")], 2, "local"))
+    monkeypatch.setattr(pipeline_module, "correct_cues", lambda *a, **k: ({0: "We use AWS."}, "qwen"))
+
+    pipeline_module.run_pipeline(tmp_path / "meeting.wav", txt_path, "en", num_speakers=1)
+
+    meeting_path = pipeline_module.meeting_json_path_for(txt_path)
+    data = json.loads(meeting_path.read_text())
+    assert txt_path.read_text() == "We use AWS.\nfine"
+    assert data["segments"][0] == {"start": 0, "end": 1, "text": "We use AWS.", "original_text": "we use AVS", "speaker": None, "channel": None}
+    assert "original_text" not in data["segments"][1]
+    assert data["cleanup"]["changed"] == 1 and data["cleanup"]["model"] == "qwen"
+
+    result = pipeline_module.restore_recognized_text(txt_path)
+
+    data = json.loads(meeting_path.read_text())
+    assert result["restored"] == 1
+    assert txt_path.read_text() == "we use AVS\nfine"
+    assert data["segments"][0] == {"start": 0, "end": 1, "text": "we use AVS", "speaker": None, "channel": None}
+    assert "cleanup" not in data
+
+
+def test_failed_ai_correction_keeps_the_recognized_transcript(monkeypatch, tmp_path):
+    from transcriber import pipeline as pipeline_module
+
+    txt_path = tmp_path / "meeting.txt"
+    monkeypatch.setattr(pipeline_module, "rel_to_data", lambda p: str(p))
+    monkeypatch.setattr(pipeline_module, "transcribe", lambda *a, **k: asr.Transcript([asr.Segment(0, 1, "hello")], 1, "local"))
+    monkeypatch.setattr(pipeline_module, "correct_cues", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("LLM down")))
+
+    pipeline_module.run_pipeline(tmp_path / "meeting.wav", txt_path, "en", num_speakers=1)
+
+    state = pipeline_module.progress.snapshot()
+    assert state["stage"] == "done"
+    assert "AI correction is unavailable" in state["warning"]
+    assert txt_path.read_text() == "hello"
+    assert json.loads(pipeline_module.meeting_json_path_for(txt_path).read_text())["cleanup"] is None
+
+
+
 def test_rerun_diarization_relabels_existing_segments_without_asr(monkeypatch, tmp_path):
     from transcriber import pipeline as pipeline_module
     from transcriber.progress import Progress

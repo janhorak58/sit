@@ -17,6 +17,7 @@ DEFAULTS = {
     "transcript": {
         "show_timestamps": True, "show_speakers": True,
         "paragraph_size": "normal", "default_view": "both",
+        "auto_cleanup": True, "glossary": "",
     },
     "brief": {
         "detail": "standard", "language": "same", "compare_previous": True,
