@@ -13,6 +13,7 @@ import difflib
 import logging
 import math
 from pathlib import Path
+import re
 import subprocess
 import wave
 
@@ -286,6 +287,48 @@ def drop_quiet_hallucinations(wav_path, segments):
     return kept
 
 
+# Whisper learned subtitle credits from its training data and writes them into
+# silence or noise ("Titulky vytvořil JohnyX."). A short segment that is only a
+# credit was never said.
+STOCK_CREDIT = re.compile(r"^\W*(?:(?:pod)?titulky\s+(?:vytvořil|připravil|přeložil)|subtitles\s+by)\b", re.I)
+STOCK_CREDIT_WORDS = 6
+# A decoder stuck in a loop repeats one short unit to the end of its window
+# ("ty ty ty ...", "tejtejtej", "????"), often with small slips, so everything
+# from the first long run on is dropped and one unit of it stays. Runs shorter
+# than LOOP_MIN_CHARS are speech ("100000", "ne, ne, ne"). A segment that was
+# nearly all loop and keeps at most LOOP_LEFTOVER_WORDS ("um,") goes entirely.
+REPEAT_LOOP = re.compile(r"(.{1,20}?)\1{4,}", re.S | re.I)
+LOOP_MIN_CHARS = 20
+LOOP_LEFTOVER_WORDS = 2
+
+
+def _cut_loop(text):
+    """Text up to and including one unit of its first long repetition run."""
+    for match in REPEAT_LOOP.finditer(text):
+        if len(match.group(0)) >= LOOP_MIN_CHARS:
+            return (text[:match.start()] + match.group(1)).strip()
+    return text
+
+
+def drop_stock_hallucinations(segments):
+    """Remove subtitle credits and cut decoder loops off."""
+    kept = []
+    for seg in segments:
+        text = seg.text.strip()
+        if STOCK_CREDIT.match(text) and len(text.split()) <= STOCK_CREDIT_WORDS:
+            log.info("Dropping subtitle credit at %.1fs: %r", seg.start, text)
+            continue
+        cut = _cut_loop(text)
+        if cut != text:
+            if len(cut) * 10 < len(text) and len(cut.split()) <= LOOP_LEFTOVER_WORDS or not any(ch.isalnum() for ch in cut):
+                log.info("Dropping repetition loop at %.1fs: %r", seg.start, text[:80])
+                continue
+            log.info("Cut a repetition loop at %.1fs: %r", seg.start, text[:80])
+            seg = dataclasses.replace(seg, text=cut)
+        kept.append(seg)
+    return kept
+
+
 # Track order written by the recorder's amerge; index is the wav channel.
 CHANNEL_LABELS = ("mic", "system")
 # A track whose loudest sample never gets near speech held nothing anybody
@@ -382,9 +425,8 @@ def _transcribe_mono(wav_path, language, on_segment, timeout):
                 log.warning("Spark transcription failed, falling back to local: %s", _last_remote_error)
         if transcript is None:
             transcript = _local_transcribe(model_audio, language, on_segment)
-        return dataclasses.replace(
-            transcript, segments=drop_quiet_hallucinations(model_audio, transcript.segments)
-        )
+        segments = drop_quiet_hallucinations(model_audio, transcript.segments)
+        return dataclasses.replace(transcript, segments=drop_stock_hallucinations(segments))
 
 
 # Speakers in the room reach the microphone a little after the loopback has
@@ -481,13 +523,14 @@ def transcribe_live(wav_path, language, timeout, remote_available):
         if remote_available:
             try:
                 segments, duration = _post_audio(model_audio, language, timeout=timeout, mime="audio/wav")
-                return Transcript(segments, duration, "spark")
+                return Transcript(drop_stock_hallucinations(segments), duration, "spark")
             except (httpx.HTTPError, ValueError, KeyError, OSError) as exc:
                 global _last_remote_error
                 detail = getattr(getattr(exc, "response", None), "text", "")
                 _last_remote_error = f"{exc} {detail}".strip()[:1000]
                 log.warning("Live draft window remote transcription failed, falling back to local: %s", _last_remote_error)
-        return _local_transcribe(model_audio, language, lambda segment, duration: None)
+        transcript = _local_transcribe(model_audio, language, lambda segment, duration: None)
+        return dataclasses.replace(transcript, segments=drop_stock_hallucinations(transcript.segments))
 
 
 def diagnose():

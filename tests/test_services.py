@@ -18,6 +18,24 @@ def test_asr_falls_back_to_local_when_remote_transcription_fails(monkeypatch, tm
     monkeypatch.setattr(asr, "_local_transcribe", lambda *args: expected)
     assert asr.transcribe(wav, "en").backend == "local"
 
+def test_stock_whisper_hallucinations_are_removed_but_real_repetition_stays():
+    texts = [
+        "Titulky vytvořil JohnyX.",
+        "Májtej" + "tej" * 200,
+        "Já si beru kávu." + "?" * 80,
+        "um, " * 300,
+        "Ne, ne, ne, to nechci.",
+        "Stálo to 100000 korun.",
+        "Titulky vytvořil kolega, tak se na ně podíváme a pak je pošleme dál.",
+    ]
+    kept = asr.drop_stock_hallucinations([asr.Segment(i, i + 1, text) for i, text in enumerate(texts)])
+    assert [(seg.start, seg.text) for seg in kept] == [
+        (2, "Já si beru kávu.?"),
+        (4, "Ne, ne, ne, to nechci."),
+        (5, "Stálo to 100000 korun."),
+        (6, texts[6]),
+    ]
+
 def test_transcribe_enhances_audio_before_sending_it_to_the_model(monkeypatch, tmp_path):
     wav = tmp_path / "meeting.wav"
     wav.write_bytes(b"original")

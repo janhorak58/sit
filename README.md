@@ -72,6 +72,11 @@ recording. In the meeting view it plays muted above the audio and follows its
 seeking and speed. Trimming, renaming, moving and deleting the recording take
 the video along. Without the portal or the plugins the option is not shown.
 
+Whisper sometimes writes text that nobody said: a subtitle credit such as
+"Titulky vytvořil JohnyX." in a pause, or one syllable repeated to the end of a
+window ("tejtejtej...", "????"). SIT drops such credits and cuts a loop off
+after its first repetition, with both the remote and the local engine.
+
 The FastAPI backend can be opened in a browser or in a native Tauri window.
 Transcription uses a configured private ASR server, falling back to local
 Whisper large-v3-turbo (CPU, ONNX) when it is unavailable — that fallback is part of the
