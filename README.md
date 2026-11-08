@@ -26,6 +26,11 @@ mix. Each track is transcribed on its own pass, so room reverb from the
 microphone never degrades the clean loopback copy of what plays on the machine,
 and speaker labels are namespaced per track (`MIC_SPEAKER_00`,
 `SYSTEM_SPEAKER_00`). A track that stayed silent is skipped, not transcribed.
+The speaker count you set covers the whole meeting. When it equals the
+number of tracks with speech (two people, one on each side of the call),
+each track is one person and speaker recognition is skipped. With more
+people, each track is recognized on its own, and the shortest stray voices
+are folded into the largest voice of their track until the count matches.
 Without headphones the microphone also picks up the speakers. Before the
 microphone track is transcribed or diarized, SIT subtracts that echo using the
 system track as the reference (via the system `speexdsp` library), so the far

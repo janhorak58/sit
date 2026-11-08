@@ -222,6 +222,41 @@ def _speaker_turns(wav_path, num_speakers):
     return _local_speaker_turns(wav_path, num_speakers), "local", diarization["local_model"]
 
 
+# Model name recorded when the tracks alone settle who spoke.
+TRACKS_AS_SPEAKERS = "one speaker per track"
+
+
+def _cap_speakers(track_turns, num_speakers):
+    """Fold each track's smallest voices into its largest until ``num_speakers`` remain.
+
+    pyannote tends to split one voice into several clusters, and the stray
+    ones hold seconds of talk next to the real speaker's minutes. Every track
+    with any turns keeps at least its largest voice, then the remaining slots
+    go to the voices that talked longest overall.
+    """
+    talk = {}
+    for label, turns in track_turns.items():
+        for turn in turns:
+            key = (label, turn["speaker"])
+            talk[key] = talk.get(key, 0.0) + float(turn["end"]) - float(turn["start"])
+    ranked = sorted(talk, key=talk.get, reverse=True)
+    largest = {}
+    for label, speaker in ranked:
+        largest.setdefault(label, speaker)
+    kept = {(label, speaker) for label, speaker in largest.items()}
+    for key in ranked:
+        if len(kept) >= num_speakers:
+            break
+        kept.add(key)
+    return {
+        label: [
+            turn if (label, turn["speaker"]) in kept else {**turn, "speaker": largest[label]}
+            for turn in turns
+        ]
+        for label, turns in track_turns.items()
+    }
+
+
 def label_speakers(wav_path, segments, num_speakers):
     """Attach labels using Spark first, with the local model as fallback.
 
@@ -229,6 +264,11 @@ def label_speakers(wav_path, segments, num_speakers):
     separate the room from the machine perfectly, so mixing them down would
     only ask pyannote to rediscover that split - badly, since the same voice
     reaches both. Labels are namespaced per track and can never collide.
+
+    ``num_speakers`` counts people in the whole meeting. When it is no more
+    than the tracks that carry speech, each track is one person and pyannote
+    is not asked at all. Otherwise each track is diarized freely and the
+    result is folded down to that count.
     """
     channels = sorted({seg.channel for seg in segments if seg.channel})
     if not channels:
@@ -238,19 +278,29 @@ def label_speakers(wav_path, segments, num_speakers):
             [part for seg in segments for part in split_by_speaker(seg, turns)], backend, model
         )
 
-    labeled, backends, model = [], [], get_connection("diarization")["local_model"]
+    tracked = [seg for seg in segments if seg.channel]
+    if num_speakers and num_speakers <= len(channels):
+        progress.update(stage="merging", percent=95, message="Assembling output...")
+        return DiarizationResult(
+            [dataclasses.replace(seg, speaker=f"{seg.channel.upper()}_SPEAKER_00") for seg in tracked],
+            "local",
+            TRACKS_AS_SPEAKERS,
+        )
+
+    track_turns, backends, model = {}, [], get_connection("diarization")["local_model"]
     for label in channels:
-        index = CHANNEL_LABELS.index(label)
-        track_segments = [seg for seg in segments if seg.channel == label]
-        with channel_wav(wav_path, index) as track:
-            # num_speakers counts people in the room, not per track, so the
-            # model is left to decide how many voices each track carries.
-            turns, backend, model = _speaker_turns(track, None)
+        with channel_wav(wav_path, CHANNEL_LABELS.index(label)) as track:
+            # The meeting's count says nothing about how it splits across
+            # tracks, so each track is diarized freely and capped below.
+            track_turns[label], backend, model = _speaker_turns(track, None)
         backends.append(backend)
-        prefix = label.upper()
-        for seg in track_segments:
-            for part in split_by_speaker(seg, turns):
-                labeled.append(dataclasses.replace(part, speaker=f"{prefix}_{part.speaker}"))
+    if num_speakers:
+        track_turns = _cap_speakers(track_turns, num_speakers)
+
+    labeled = []
+    for seg in tracked:
+        for part in split_by_speaker(seg, track_turns[seg.channel]):
+            labeled.append(dataclasses.replace(part, speaker=f"{seg.channel.upper()}_{part.speaker}"))
     labeled.sort(key=lambda seg: seg.start)
     progress.update(stage="merging", percent=95, message="Assembling output...")
     return DiarizationResult(labeled, backends[0] if len(set(backends)) == 1 else "local", model)

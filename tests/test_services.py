@@ -579,6 +579,68 @@ def test_label_speakers_falls_back_locally_when_spark_fails(monkeypatch, tmp_pat
     assert result.segments[0].speaker == "SPEAKER_00"
 
 
+def _two_track_segments():
+    return [
+        asr.Segment(0.0, 4.0, "room one two three", channel="mic"),
+        asr.Segment(4.0, 8.0, "remote four five six", channel="system"),
+        asr.Segment(8.0, 12.0, "room seven eight nine", channel="mic"),
+    ]
+
+
+def test_two_tracks_with_two_speakers_label_one_person_per_track(monkeypatch, tmp_path):
+    from transcriber import pipeline as pipeline_module
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "_speaker_turns",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("diarizer ran")),
+    )
+
+    result = pipeline_module.label_speakers(tmp_path / "meeting.wav", _two_track_segments(), 2)
+
+    assert [seg.speaker for seg in result.segments] == [
+        "MIC_SPEAKER_00", "SYSTEM_SPEAKER_00", "MIC_SPEAKER_00",
+    ]
+
+
+def test_two_tracks_fold_stray_voices_down_to_the_requested_count(monkeypatch, tmp_path):
+    from contextlib import contextmanager
+
+    from transcriber import pipeline as pipeline_module
+
+    @contextmanager
+    def fake_channel_wav(_wav, index):
+        yield index
+
+    # The room holds two real voices plus a two-second stray cluster, the
+    # speakers carry one voice plus a one-second stray cluster.
+    turns_by_track = {
+        0: [
+            {"start": 0.0, "end": 4.0, "speaker": "SPEAKER_00"},
+            {"start": 8.0, "end": 10.0, "speaker": "SPEAKER_02"},
+            {"start": 10.0, "end": 12.0, "speaker": "SPEAKER_01"},
+            {"start": 12.0, "end": 15.0, "speaker": "SPEAKER_01"},
+        ],
+        1: [
+            {"start": 4.0, "end": 7.0, "speaker": "SPEAKER_00"},
+            {"start": 7.0, "end": 8.0, "speaker": "SPEAKER_01"},
+        ],
+    }
+    monkeypatch.setattr(pipeline_module, "channel_wav", fake_channel_wav)
+    monkeypatch.setattr(
+        pipeline_module, "get_connection", lambda name: {"local_model": "pyannote-local"}
+    )
+    monkeypatch.setattr(
+        pipeline_module, "_speaker_turns", lambda track, _n: (turns_by_track[track], "local", "m")
+    )
+
+    result = pipeline_module.label_speakers(tmp_path / "meeting.wav", _two_track_segments(), 3)
+
+    assert {seg.speaker for seg in result.segments} == {
+        "MIC_SPEAKER_00", "MIC_SPEAKER_01", "SYSTEM_SPEAKER_00",
+    }
+
+
 def test_browse_reports_segments_and_summary_json_flags(monkeypatch, tmp_path):
     from transcriber import library, paths
 
