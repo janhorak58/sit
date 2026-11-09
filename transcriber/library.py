@@ -26,6 +26,7 @@ from .paths import (
     sanitize_component,
     valid_component,
 )
+from .playback import playback_path_for
 
 
 def atomic_write_text(path, text):
@@ -178,6 +179,8 @@ def delete_file(path):
     if target is None or not target.is_file():
         raise AppError("invalid path")
     target.unlink()
+    if target.suffix == ".wav":
+        playback_path_for(target).unlink(missing_ok=True)
     if target.name.endswith(".summary.md"):
         target.with_name(f"{target.name[:-len('.summary.md')]}.summary.json").unlink(missing_ok=True)
     elif target.suffix == ".txt":
@@ -472,6 +475,9 @@ def move_item(folder, name, to_folder, to_name, wav_path=None):
         if source not in allowed_audio or source is None or not source.is_file():
             raise AppError("invalid path")
         moves.append((source, dst_dir / AUDIO_SUBDIR / f"{to_name}.wav", "wav"))
+        listening = playback_path_for(source)
+        if listening.is_file():
+            moves.append((listening, playback_path_for(dst_dir / AUDIO_SUBDIR / f"{to_name}.wav"), "playback"))
 
     if not moves:
         raise AppError("item not found")
