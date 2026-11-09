@@ -12,7 +12,7 @@ from .asr import CHANNEL_LABELS, LOCAL_LABEL, REMOTE_LABEL, Segment, channel_wav
 from .cleanup import correct_cues
 from .config import LOCAL_ASR_DEVICE, LOCAL_ASR_MODEL
 from .connections import bearer_headers, get_connection
-from .library import atomic_write_text, meeting_json_path_for
+from .library import atomic_write_text, meeting_json_path_for, render_transcript_text
 from .models import get_diarize_pipeline
 from .paths import rel_to_data
 from .preferences import get_preferences
@@ -309,16 +309,8 @@ def label_speakers(wav_path, segments, num_speakers):
 
 
 def render_text(segments):
-    """Flatten segments into the plain-text transcript (unchanged wire format)."""
-    if not any(seg.speaker for seg in segments):
-        return "\n".join(seg.text.strip() for seg in segments).strip()
-    lines, last_speaker = [], None
-    for seg in segments:
-        if seg.speaker != last_speaker:
-            lines.append(f"\n[{seg.speaker}]")
-            last_speaker = seg.speaker
-        lines.append(seg.text.strip())
-    return "\n".join(lines).strip()
+    """Flatten segments into the plain-text transcript."""
+    return render_transcript_text([dataclasses.asdict(seg) for seg in segments])
 
 
 def rerun_diarization(wav_path, txt_path, num_speakers):

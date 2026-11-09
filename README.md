@@ -682,6 +682,11 @@ Python at its `.venv/bin/python`. The desktop always uses
 `127.0.0.1:47831`; open a different backend port in the browser instead.
 A relative `XDG_DATA_HOME` is ignored per the XDG spec.
 
+The `.txt` transcript groups one speaker's consecutive cues into paragraphs,
+like the meeting view: a pause over 2.5 s or about 400 characters starts a
+new one. Older files keep their one-cue-per-line layout until the transcript
+is edited, renamed, trimmed, diarized, corrected by AI or reverted again.
+
 Transcripts: `<folder>/<name>.txt`; structured data: `<name>.meeting.json`;
 recordings: `<folder>/audio/<name>.wav`; summaries: `<name>.summary.md` /
 `.summary.json`. Older audio directly in a folder remains readable. Working

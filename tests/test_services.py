@@ -381,22 +381,38 @@ def test_recording_cancel_is_noop_when_nothing_recording(monkeypatch, tmp_path):
     assert recording_module.cancel() == {"ok": True}
 
 
-def test_render_text_matches_legacy_single_speaker_format():
+def test_render_text_joins_cues_into_paragraphs_until_a_pause():
     from transcriber.pipeline import render_text
 
-    segments = [asr.Segment(0, 1, " Hello "), asr.Segment(1, 2, "world.")]
-    assert render_text(segments) == "Hello\nworld."
+    segments = [
+        asr.Segment(0, 1, " Hello "),
+        asr.Segment(1.5, 2, "world."),
+        asr.Segment(6, 7, "Later."),
+    ]
+    assert render_text(segments) == "Hello world.\nLater."
 
 
-def test_render_text_matches_legacy_multi_speaker_format():
+def test_render_text_starts_a_heading_on_every_speaker_change():
     from transcriber.pipeline import render_text
 
     segments = [
         asr.Segment(0, 1, "Hi.", speaker="SPEAKER_00"),
         asr.Segment(1, 2, "Hi there.", speaker="SPEAKER_01"),
         asr.Segment(2, 3, "How are you?", speaker="SPEAKER_01"),
+        asr.Segment(3, 4, "Fine.", speaker="SPEAKER_00"),
     ]
-    assert render_text(segments) == "[SPEAKER_00]\nHi.\n\n[SPEAKER_01]\nHi there.\nHow are you?"
+    assert render_text(segments) == (
+        "[SPEAKER_00]\nHi.\n\n[SPEAKER_01]\nHi there. How are you?\n\n[SPEAKER_00]\nFine."
+    )
+
+
+def test_render_text_breaks_a_long_monologue_into_paragraphs():
+    from transcriber.pipeline import render_text
+
+    sentence = "word " * 50
+    segments = [asr.Segment(i, i + 1, sentence, speaker="SPEAKER_00") for i in range(3)]
+    paragraphs = render_text(segments).split("\n")[1:]
+    assert len(paragraphs) == 2
 
 
 def test_run_pipeline_writes_meeting_json_with_segments(monkeypatch, tmp_path):
@@ -502,7 +518,7 @@ def test_ai_correction_is_saved_with_the_recognized_text_and_can_be_undone(monke
 
     meeting_path = pipeline_module.meeting_json_path_for(txt_path)
     data = json.loads(meeting_path.read_text())
-    assert txt_path.read_text() == "We use AWS.\nfine"
+    assert txt_path.read_text() == "We use AWS. fine"
     assert data["segments"][0] == {"start": 0, "end": 1, "text": "We use AWS.", "original_text": "we use AVS", "speaker": None, "channel": None}
     assert "original_text" not in data["segments"][1]
     assert data["cleanup"]["changed"] == 1 and data["cleanup"]["model"] == "qwen"
@@ -511,7 +527,7 @@ def test_ai_correction_is_saved_with_the_recognized_text_and_can_be_undone(monke
 
     data = json.loads(meeting_path.read_text())
     assert result["restored"] == 1
-    assert txt_path.read_text() == "we use AVS\nfine"
+    assert txt_path.read_text() == "we use AVS fine"
     assert data["segments"][0] == {"start": 0, "end": 1, "text": "we use AVS", "speaker": None, "channel": None}
     assert "cleanup" not in data
 
