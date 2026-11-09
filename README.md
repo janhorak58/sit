@@ -35,7 +35,10 @@ Without headphones the microphone also picks up the speakers. Before the
 microphone track is transcribed or diarized, SIT subtracts that echo using the
 system track as the reference (via the system `speexdsp` library), so the far
 end is not transcribed a second time as someone in the room. Without
-`speexdsp` the microphone track stays as recorded.
+`speexdsp` the microphone track stays as recorded. The player plays a mono mix
+of the echo-free microphone and the system track, kept as a hidden
+`.<name>.playback.flac` next to the recording. The original two-track wav stays
+untouched and is what transcription, trimming and downloads use.
 
 Both ends of that pair are chosen in the UI: the microphone, and the output
 whose monitor becomes the system track (defaulting to the current default

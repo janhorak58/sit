@@ -4,7 +4,7 @@ from urllib.parse import quote
 from fastapi import APIRouter
 from fastapi.responses import FileResponse, Response
 
-from .. import library
+from .. import library, playback
 from ..errors import AppError
 from ..paths import resolve_in_data
 from ..pdf_export import render_summary_pdf
@@ -87,8 +87,16 @@ def audio(path: str):
     target = resolve_in_data(path)
     if target is None or not target.is_file():
         raise AppError("Recording not found.")
+    listening = playback.fresh(target)
+    if listening is None:
+        # Recordings from before the listening copy existed get one now and
+        # play from the original until it is ready.
+        playback.schedule(target)
     # Trimming rewrites the file in place, so the player must revalidate.
-    return FileResponse(target, media_type="audio/wav", headers={"Cache-Control": "no-cache"})
+    headers = {"Cache-Control": "no-cache"}
+    if listening is not None:
+        return FileResponse(listening, media_type="audio/flac", headers=headers)
+    return FileResponse(target, media_type="audio/wav", headers=headers)
 
 
 @router.get("/library/levels")
@@ -120,7 +128,9 @@ def screen_file(path: str):
 def trim(req: TrimReq):
     if progress.active():
         raise AppError("Wait until the current processing step finishes, then trim.")
-    return {"ok": True, **library.trim_recording(req.path, req.start, req.end)}
+    result = library.trim_recording(req.path, req.start, req.end)
+    playback.schedule(resolve_in_data(req.path))
+    return {"ok": True, **result}
 
 
 @router.post("/library/move")
