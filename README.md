@@ -544,6 +544,24 @@ It refuses to run while the backend answers on `127.0.0.1:47831`
 (`TRANSCRIBER_PORT` is honoured), and refuses to pull over uncommitted
 changes — use `--no-pull` for a modified checkout.
 
+`update.sh` does not install system packages. When a release needs a new one,
+install it once with your distribution's command from
+[Installation](#installation). Echo removal on the microphone track needs
+`speexdsp` (added in November 2026). Without it SIT still works, but the far
+end may be transcribed twice and the player keeps the echo:
+
+```bash
+sudo apt install -y libspeexdsp1      # Ubuntu / Debian / WSL
+sudo dnf install -y speexdsp          # Fedora
+sudo pacman -S --needed speexdsp      # Arch
+```
+
+**On Windows** SIT runs inside WSL, so update it from the Ubuntu (WSL)
+terminal, not from PowerShell: close the SIT window, `cd` into the checkout
+and run `./update.sh`. When WSLg cannot capture Windows system audio, SIT
+records only the microphone, and echo removal and the echo-free player do not
+apply. Record a Teams or Zoom call with another tool and use **Upload File**.
+
 
 ## Data and configuration
 
