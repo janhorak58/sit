@@ -35,7 +35,10 @@ Without headphones the microphone also picks up the speakers. Before the
 microphone track is transcribed or diarized, SIT subtracts that echo using the
 system track as the reference (via the system `speexdsp` library), so the far
 end is not transcribed a second time as someone in the room. Without
-`speexdsp` the microphone track stays as recorded.
+`speexdsp` the microphone track stays as recorded. The player plays a mono mix
+of the echo-free microphone and the system track, kept as a hidden
+`.<name>.playback.flac` next to the recording. The original two-track wav stays
+untouched and is what transcription, trimming and downloads use.
 
 Both ends of that pair are chosen in the UI: the microphone, and the output
 whose monitor becomes the system track (defaulting to the current default
@@ -681,6 +684,11 @@ environment. Without them it looks for the checkout at the build location and
 Python at its `.venv/bin/python`. The desktop always uses
 `127.0.0.1:47831`; open a different backend port in the browser instead.
 A relative `XDG_DATA_HOME` is ignored per the XDG spec.
+
+The `.txt` transcript groups one speaker's consecutive cues into paragraphs,
+like the meeting view: a pause over 2.5 s or about 400 characters starts a
+new one. Older files keep their one-cue-per-line layout until the transcript
+is edited, renamed, trimmed, diarized, corrected by AI or reverted again.
 
 Transcripts: `<folder>/<name>.txt`; structured data: `<name>.meeting.json`;
 recordings: `<folder>/audio/<name>.wav`; summaries: `<name>.summary.md` /

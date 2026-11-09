@@ -2,6 +2,7 @@ import threading
 
 from fastapi import APIRouter
 
+from .. import playback
 from ..config import MAX_RECORDING_SECONDS, WAV_PATH
 from ..errors import AppError
 from ..library import store_recording
@@ -91,4 +92,6 @@ def stop(req: StopReq):
         if not recorder.stop():
             raise AppError("No recording found.")
         target = store_recording(WAV_PATH, req.folder, req.filename)
+        # Ready by the time the transcript is, so the first listen is clean.
+        playback.schedule(target)
         return {"ok": True, "path": rel_to_data(target)}

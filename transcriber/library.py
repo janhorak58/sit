@@ -26,6 +26,7 @@ from .paths import (
     sanitize_component,
     valid_component,
 )
+from .playback import playback_path_for
 
 
 def atomic_write_text(path, text):
@@ -178,6 +179,8 @@ def delete_file(path):
     if target is None or not target.is_file():
         raise AppError("invalid path")
     target.unlink()
+    if target.suffix == ".wav":
+        playback_path_for(target).unlink(missing_ok=True)
     if target.name.endswith(".summary.md"):
         target.with_name(f"{target.name[:-len('.summary.md')]}.summary.json").unlink(missing_ok=True)
     elif target.suffix == ".txt":
@@ -274,20 +277,37 @@ def read_summary_json(path):
     return None
 
 
-# ponytail: duplicates pipeline.render_text's speaker-heading logic, on dicts
-# instead of Segment dataclasses. Sharing it would mean library.py importing
-# from pipeline.py, which already imports from library.py (meeting_json_path_for)
-# -> circular import. Keep both; they're 6 lines and independently tested.
-def _render_segments_text(segments):
-    if not any(seg.get("speaker") for seg in segments):
-        return "\n".join((seg.get("text") or "").strip() for seg in segments).strip()
-    lines, last_speaker = [], None
+# Cues of one speaker join into a paragraph until a pause this long or the
+# paragraph reaches PARAGRAPH_CHARS. The same rule as the meeting view's
+# "Normal" grouping (PAUSE_BREAK and MAX_CHARS in meeting.js), so the text
+# file reads like the screen instead of one ASR window per line.
+PARAGRAPH_PAUSE_SECONDS = 2.5
+PARAGRAPH_CHARS = 400
+
+
+def render_transcript_text(segments):
+    """Plain-text transcript: ``[SPEAKER]`` headings over paragraphs of cues."""
+    blocks = []
     for seg in segments:
+        text = (seg.get("text") or "").strip()
         speaker = seg.get("speaker")
-        if speaker and speaker != last_speaker:
-            lines.append(f"\n[{speaker}]")
-        last_speaker = speaker
-        lines.append((seg.get("text") or "").strip())
+        last = blocks[-1] if blocks else None
+        if (
+            last
+            and last["speaker"] == speaker
+            and float(seg["start"]) - last["end"] <= PARAGRAPH_PAUSE_SECONDS
+            and len(last["text"]) < PARAGRAPH_CHARS
+        ):
+            last["text"] = f"{last['text']} {text}".strip()
+            last["end"] = float(seg["end"])
+        else:
+            blocks.append({"speaker": speaker, "end": float(seg["end"]), "text": text})
+    lines, last_speaker = [], None
+    for block in blocks:
+        if block["speaker"] and block["speaker"] != last_speaker:
+            lines.append(f"\n[{block['speaker']}]")
+        last_speaker = block["speaker"]
+        lines.append(block["text"])
     return "\n".join(lines).strip()
 
 
@@ -315,7 +335,7 @@ def update_transcript(path, edits):
     data["segments"] = segments
     data["analysis_stale"] = True
     atomic_write_text(meeting_path, json.dumps(data, ensure_ascii=False, indent=2))
-    txt_path.write_text(_render_segments_text(segments))
+    txt_path.write_text(render_transcript_text(segments))
     return {"segments": segments}
 
 
@@ -343,7 +363,7 @@ def rename_speakers(path, names):
         # The stored analysis quotes the old labels, so it is now out of date.
         data["analysis_stale"] = True
         atomic_write_text(meeting_path, json.dumps(data, ensure_ascii=False, indent=2))
-        txt_path.write_text(_render_segments_text(segments))
+        txt_path.write_text(render_transcript_text(segments))
     return {"segments": segments, "renamed": renamed}
 
 
@@ -444,7 +464,7 @@ def trim_recording(path, start, end):
         meeting["duration"] = round(kept, 2)
         meeting["analysis_stale"] = True
         atomic_write_text(meeting_path, json.dumps(meeting, ensure_ascii=False, indent=2))
-        txt_path.write_text(_render_segments_text(segments))
+        txt_path.write_text(render_transcript_text(segments))
     # Last, so a video that cannot follow still leaves audio and transcript in step.
     screen_kept = screen.trim(screen_path_for(wav), offset, offset + kept)
     return {"duration": kept, "transcript_shifted": meeting is not None, "screen_kept": screen_kept}
@@ -472,6 +492,9 @@ def move_item(folder, name, to_folder, to_name, wav_path=None):
         if source not in allowed_audio or source is None or not source.is_file():
             raise AppError("invalid path")
         moves.append((source, dst_dir / AUDIO_SUBDIR / f"{to_name}.wav", "wav"))
+        listening = playback_path_for(source)
+        if listening.is_file():
+            moves.append((listening, playback_path_for(dst_dir / AUDIO_SUBDIR / f"{to_name}.wav"), "playback"))
 
     if not moves:
         raise AppError("item not found")
