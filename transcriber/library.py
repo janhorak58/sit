@@ -6,12 +6,19 @@ Layout: transcripts live at ``<folder>/<name>.txt``, audio at
 
 from datetime import datetime
 import json
+import math
 import os
 from pathlib import Path
 import shutil
+import wave
+
+import numpy as np
 
 from .config import AUDIO_SUBDIR, DATA_DIR, INTERNAL_TOP_DIRS
 from .errors import AppError
+from .filetimes import created_at
+from . import screen
+from .screen import screen_path_for
 from .paths import (
     rel_to_data,
     resolve_in_data,
@@ -45,6 +52,13 @@ def _items_in(target, rel_folder):
         for p in entries if p.is_file() and p.name.endswith(".wav")
     }
     wav_map = {**legacy_wav, **wav_map}
+
+    def recorded_at(n):
+        # The earliest artifact wins: a trim replaces the wav with a new file,
+        # but the transcript made before it still dates the meeting.
+        artifacts = [wav_map.get(n), target / f"{n}.txt", target / f"{n}.meeting.json"]
+        return min(created_at(p) for p in artifacts if p is not None and p.is_file())
+
     return [{
         "name": n,
         # Folder the artifacts actually live in. Recordings kept in their own
@@ -58,6 +72,7 @@ def _items_in(target, rel_folder):
         "summary_path": rel_to_data(target / f"{n}.summary.md") if n in summary_stems else None,
         "segments": n in meeting_json_stems,
         "summary_json": n in summary_json_stems,
+        "recorded_at": recorded_at(n),
     } for n in sorted(set(txt_stems) | set(wav_map))]
 
 
@@ -67,6 +82,17 @@ def _visible_subfolders(target):
         p.name for p in target.iterdir()
         if p.is_dir() and p.name not in hidden and not p.name.startswith(".")
     )
+
+
+def _same_recording_name(folder_name, item_name):
+    """Whether ``folder_name`` is the folder the UI made for ``item_name``.
+
+    Before both used "-", the file got "_" where the folder name got "-" for
+    characters like "/" and ":", and the folder collapsed runs of spaces.
+    """
+    def canonical(name):
+        return " ".join(name.replace("_", "-").split())
+    return canonical(folder_name) == canonical(item_name)
 
 
 def is_recording_folder(path):
@@ -80,7 +106,7 @@ def is_recording_folder(path):
     if not path.is_dir() or _visible_subfolders(path):
         return False
     items = _items_in(path, "")
-    return len(items) == 1 and items[0]["name"] == path.name
+    return len(items) == 1 and _same_recording_name(path.name, items[0]["name"])
 
 
 def browse(rel_folder):
@@ -95,11 +121,17 @@ def browse(rel_folder):
         child = target / name
         child_rel = f"{rel_folder}/{name}" if rel_folder else name
         if is_recording_folder(child):
-            items.extend(_items_in(child, child_rel))
+            # The folder is made just before recording and outlives a trim.
+            folder_made = created_at(child)
+            for item in _items_in(child, child_rel):
+                item["recorded_at"] = min(item["recorded_at"], folder_made)
+                items.append(item)
         else:
-            subfolders.append(name)
-    items.sort(key=lambda item: item["name"])
-    return {"folder": rel_folder, "subfolders": subfolders, "items": items}
+            subfolders.append((created_at(child), name))
+    # Newest first, by when each meeting (or folder) came to be.
+    items.sort(key=lambda item: (-item["recorded_at"], item["name"]))
+    subfolders.sort(key=lambda entry: (-entry[0], entry[1]))
+    return {"folder": rel_folder, "subfolders": [name for _, name in subfolders], "items": items}
 
 
 def make_dir(folder):
@@ -150,6 +182,8 @@ def delete_file(path):
         target.with_name(f"{target.name[:-len('.summary.md')]}.summary.json").unlink(missing_ok=True)
     elif target.suffix == ".txt":
         meeting_json_path_for(target).unlink(missing_ok=True)
+    if target.suffix == ".wav":
+        screen_path_for(target).unlink(missing_ok=True)
     holder = target.parent.parent if target.parent.name == AUDIO_SUBDIR else target.parent
     _prune_recording_folder(holder)
 
@@ -190,6 +224,7 @@ def store_recording(source_wav, folder, filename):
     if target_file.exists():
         raise AppError("target audio already exists")
     source_wav.rename(target_file)
+    screen.store(target_file)
     return target_file
 
 
@@ -312,6 +347,109 @@ def rename_speakers(path, names):
     return {"segments": segments, "renamed": renamed}
 
 
+# The trim view draws loudness on a dB scale, so quiet speech stays visible.
+LEVEL_FLOOR_DB = -60.0
+LEVEL_BUCKETS = 600
+TRIM_MIN_SECONDS = 1.0
+
+
+def _library_wav(path):
+    target = resolve_in_data(path)
+    if target is None or not target.is_file() or target.suffix.lower() != ".wav":
+        raise AppError("Recording not found.")
+    return target
+
+
+def screen_video(path):
+    """The screen video recorded together with a library wav, or None."""
+    video = screen_path_for(_library_wav(path))
+    return video if video.is_file() else None
+
+
+def recording_levels(path):
+    """Loudness over time, one 0..1 value per bucket, for the trim view.
+
+    The louder channel wins, so a remote voice on the system track shows as
+    clearly as someone speaking in the room."""
+    wav = _library_wav(path)
+    with wave.open(str(wav), "rb") as handle:
+        if handle.getsampwidth() != 2:
+            raise AppError("This recording's audio format cannot be trimmed.")
+        rate, channels, frames = handle.getframerate(), handle.getnchannels(), handle.getnframes()
+        per_bucket = max(1, -(-frames // LEVEL_BUCKETS))
+        levels = []
+        while chunk := handle.readframes(per_bucket):
+            samples = np.frombuffer(chunk, dtype="<i2").reshape(-1, channels).astype(np.float32)
+            rms = float(np.sqrt(np.mean(samples * samples, axis=0)).max()) / 32768
+            db = 20 * math.log10(rms + 1e-9)
+            levels.append(round(min(1.0, max(0.0, 1 - db / LEVEL_FLOOR_DB)), 3))
+    return {"duration": frames / rate, "levels": levels}
+
+
+def _copy_frames(source, out_path, first, last):
+    """Write frames ``first..last`` of an open wav to a new file, in chunks."""
+    params = source.getparams()
+    source.setpos(first)
+    with wave.open(str(out_path), "wb") as out:
+        out.setparams(params)
+        remaining = last - first
+        while remaining:
+            chunk = source.readframes(min(remaining, params.framerate * 60))
+            if not chunk:
+                break
+            out.writeframes(chunk)
+            remaining -= len(chunk) // (params.sampwidth * params.nchannels)
+
+
+def trim_recording(path, start, end):
+    """Cut a recording down to ``start..end`` seconds, in place.
+
+    An existing transcript follows the cut: cues centred outside the kept
+    range go, the rest shift to the new zero. Speaker names and manual edits
+    survive without transcribing again. The AI analysis is marked outdated."""
+    wav = _library_wav(path)
+    txt_path = transcript_path_for(wav)
+    meeting_path = meeting_json_path_for(txt_path)
+    meeting = None
+    if meeting_path.is_file():
+        meeting = _read_json_sidecar(meeting_path)
+    elif txt_path.is_file():
+        raise AppError("This transcript has no timings to follow the cut. Delete it first, then trim.")
+
+    tmp = wav.with_name(f".{wav.name}.trim")
+    try:
+        with wave.open(str(wav), "rb") as source:
+            rate, frames = source.getframerate(), source.getnframes()
+            first = max(0, round(start * rate))
+            last = min(frames, round(end * rate))
+            if last - first < TRIM_MIN_SECONDS * rate:
+                raise AppError("Keep at least one second of the recording.")
+            if first == 0 and last == frames:
+                raise AppError("Nothing to trim.")
+            _copy_frames(source, tmp, first, last)
+        os.replace(tmp, wav)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    offset, kept = first / rate, (last - first) / rate
+    if meeting is not None:
+        segments = []
+        for seg in meeting.get("segments") or []:
+            if not 0 <= (seg["start"] + seg["end"]) / 2 - offset < kept:
+                continue
+            seg["start"] = round(max(0.0, seg["start"] - offset), 3)
+            seg["end"] = round(min(kept, seg["end"] - offset), 3)
+            segments.append(seg)
+        meeting["segments"] = segments
+        meeting["duration"] = round(kept, 2)
+        meeting["analysis_stale"] = True
+        atomic_write_text(meeting_path, json.dumps(meeting, ensure_ascii=False, indent=2))
+        txt_path.write_text(_render_segments_text(segments))
+    # Last, so a video that cannot follow still leaves audio and transcript in step.
+    screen_kept = screen.trim(screen_path_for(wav), offset, offset + kept)
+    return {"duration": kept, "transcript_shifted": meeting is not None, "screen_kept": screen_kept}
+
+
 
 
 def move_item(folder, name, to_folder, to_name, wav_path=None):
@@ -337,11 +475,15 @@ def move_item(folder, name, to_folder, to_name, wav_path=None):
 
     if not moves:
         raise AppError("item not found")
+    if wav_path:
+        video = screen_path_for(resolve_in_data(wav_path))
+        if video.is_file():
+            moves.append((video, screen_path_for(dst_dir / AUDIO_SUBDIR / f"{to_name}.wav"), "screen"))
     if any(destination.exists() for _, destination, _ in moves):
         raise AppError("destination item already exists")
     # Classified before the rename: afterwards the folder no longer matches
     # the name it wrapped, so it would never look like a recording folder.
-    wraps_this_item = src_dir.name == name and is_recording_folder(src_dir)
+    wraps_this_item = _same_recording_name(src_dir.name, name) and is_recording_folder(src_dir)
     for _, destination, _ in moves:
         destination.parent.mkdir(parents=True, exist_ok=True)
     for source, destination, _ in moves:

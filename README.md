@@ -26,6 +26,16 @@ mix. Each track is transcribed on its own pass, so room reverb from the
 microphone never degrades the clean loopback copy of what plays on the machine,
 and speaker labels are namespaced per track (`MIC_SPEAKER_00`,
 `SYSTEM_SPEAKER_00`). A track that stayed silent is skipped, not transcribed.
+The speaker count you set covers the whole meeting. When it equals the
+number of tracks with speech (two people, one on each side of the call),
+each track is one person and speaker recognition is skipped. With more
+people, each track is recognized on its own, and the shortest stray voices
+are folded into the largest voice of their track until the count matches.
+Without headphones the microphone also picks up the speakers. Before the
+microphone track is transcribed or diarized, SIT subtracts that echo using the
+system track as the reference (via the system `speexdsp` library), so the far
+end is not transcribed a second time as someone in the room. Without
+`speexdsp` the microphone track stays as recorded.
 
 Both ends of that pair are chosen in the UI: the microphone, and the output
 whose monitor becomes the system track (defaulting to the current default
@@ -33,6 +43,39 @@ sink). Card profiles are never switched automatically — a Bluetooth headset
 has to be put into headset mode in the system sound settings first, because
 doing it silently would drop *both* tracks to narrowband HFP. Bluetooth
 microphones are labelled with that warning in the device list.
+
+A recording started too early or stopped too late can be trimmed in the
+**Transcript** step under **Trim recording**: drag the handles over the loudness
+view, or set the start and end at the player position. The cut replaces the
+saved audio for good. An existing transcript follows it (lines outside the kept
+part are dropped, the rest shift to the new times, speaker names stay), and an
+existing AI analysis is marked outdated.
+
+After transcription, the summary server corrects the transcript cue by cue. It
+fixes misheard words, names and punctuation, and leaves timestamps and speakers
+alone. Under **Customizations → AI correction**, list names and terms the AI
+should spell correctly (for example `Škoda, Trask, AWS, SQS`), or turn off the
+automatic run. The meeting editor has **Correct with AI** for older transcripts,
+and **Restore recognized text** brings back the recognizer's text of every
+corrected cue (`original_text` in `<name>.meeting.json`). A new speaker
+recognition makes the corrected text the new base. When the server is
+unreachable, the transcript keeps the recognized text and shows a warning.
+
+On a Linux desktop with a screen-sharing portal (`xdg-desktop-portal` with a
+GNOME, KDE, Hyprland or wlroots backend) and GStreamer's PipeWire and VP8
+plugins (on Arch `gstreamer gst-plugin-pipewire gst-plugins-good`), the
+**Capture** step also offers **Record the screen too**. The desktop asks once
+which monitor or window to share. Later recordings reuse that choice until
+`.screencast-token` is deleted from the library directory. The video (WebM, 5
+frames per second) is saved as `audio/<name>.screen.webm` next to the
+recording. In the meeting view it plays muted above the audio and follows its
+seeking and speed. Trimming, renaming, moving and deleting the recording take
+the video along. Without the portal or the plugins the option is not shown.
+
+Whisper sometimes writes text that nobody said: a subtitle credit such as
+"Titulky vytvořil JohnyX." in a pause, or one syllable repeated to the end of a
+window ("tejtejtej...", "????"). SIT drops such credits and cuts a loop off
+after its first repetition, with both the remote and the local engine.
 
 The FastAPI backend can be opened in a browser or in a native Tauri window.
 Transcription uses a configured private ASR server, falling back to local
@@ -179,7 +222,7 @@ Then, inside the Ubuntu distribution (WSL ships Ubuntu by default):
 
 ```bash
 sudo apt update
-sudo apt install -y git curl python3 python3-venv ffmpeg pulseaudio-utils
+sudo apt install -y git curl python3 python3-venv ffmpeg pulseaudio-utils libspeexdsp1
 
 # Only for the native window; the browser needs no build dependencies.
 sudo apt install -y build-essential pkg-config libwebkit2gtk-4.1-dev \
@@ -223,7 +266,7 @@ SSH tunnels connect by themselves once you are on the VPN.
 ### 2. Fedora
 
 ```bash
-sudo dnf install -y git curl python3 python3-pip ffmpeg-free pulseaudio-utils
+sudo dnf install -y git curl python3 python3-pip ffmpeg-free pulseaudio-utils speexdsp
 
 # Only for the native window:
 sudo dnf install -y @development-tools pkgconf-pkg-config webkit2gtk4.1-devel \
@@ -239,7 +282,7 @@ PipeWire with PipeWire-Pulse, which is what the recorder needs;
 
 ```bash
 sudo apt update
-sudo apt install -y git curl python3 python3-venv ffmpeg pulseaudio-utils
+sudo apt install -y git curl python3 python3-venv ffmpeg pulseaudio-utils libspeexdsp1
 
 # Only for the native window:
 sudo apt install -y build-essential pkg-config libwebkit2gtk-4.1-dev \
@@ -255,7 +298,7 @@ native window — use the browser instead.
 ### 4. Arch Linux
 
 ```bash
-sudo pacman -S --needed git curl python uv ffmpeg libpulse
+sudo pacman -S --needed git curl python uv ffmpeg libpulse speexdsp
 
 # Only for the native window:
 sudo pacman -S --needed base-devel pkgconf webkit2gtk-4.1 openssl \
@@ -642,7 +685,10 @@ A relative `XDG_DATA_HOME` is ignored per the XDG spec.
 Transcripts: `<folder>/<name>.txt`; structured data: `<name>.meeting.json`;
 recordings: `<folder>/audio/<name>.wav`; summaries: `<name>.summary.md` /
 `.summary.json`. Older audio directly in a folder remains readable. Working
-files live in `_scratch/`.
+files live in `_scratch/`. Intermediate audio of a running job (split
+channels, cleaned copies, upload chunks) goes to `_scratch/work/`, not to
+`/tmp`. On many systems `/tmp` sits in RAM with a per-user quota, and a long
+meeting filled it. Leftovers of a killed job are removed after a day.
 
 ### Recording and the optional file-manager integration
 
@@ -654,6 +700,15 @@ upload.
 **Open on Disk** explains where the SIT library is stored; it does not require
 or contact a separate helper. Open that data directory directly in your file
 manager when you need to inspect the files.
+
+The library lists meetings and folders newest first. A meeting is dated by
+when its recording started (or its transcript appeared), so trimming or moving
+it later does not reorder the list.
+
+Every meeting is saved in its own folder named after it, with the same name
+on its files. The library shows such a folder as the meeting itself, so one
+click opens it. The folder is created when the audio is saved, so a cancelled
+take leaves nothing behind.
 
 ## Docker (not recommended)
 
@@ -696,6 +751,7 @@ node tests/group_segments.mjs
 | GET | `/recording/status`, `/progress` | Recording / processing status |
 | POST | `/upload` | Raw audio/video upload and conversion via ffmpeg |
 | POST | `/transcribe`, `/diarize` | Transcription or a fresh speaker-recognition pass |
+| POST | `/cleanup`, `/cleanup/revert` | AI correction of a transcript, or undoing it |
 | POST | `/summaries` | Summary |
 | GET | `/asr/status`, `/asr/diagnostics` | Model availability and diagnostics |
 | GET | `/projects`, `/library/browse` | Library browsing |

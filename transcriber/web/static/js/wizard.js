@@ -6,11 +6,14 @@ import {transcribePath, watchProgress} from './transcribe.js';
 import {getPreferences} from './customizations.js';
 import {speakerNameEditor} from './speakers.js';
 import {openMeeting} from './meeting.js';
+import {initTrim, resetTrim} from './trim.js';
 
 let suggestedFolder = '';
 let unlockedStep = 1;
 let suggestionRequest = 0;
 let summaryTimer = null;
+// Offered only where the desktop can share its screen (see /recording/devices).
+let screenAvailable = false;
 
 function go(step) {
   if (step > unlockedStep) return;
@@ -39,6 +42,7 @@ function setSourceState(hasRecording) {
   $('record-microphone-field').hidden = hideStarters;
   $('record-output-field').hidden = hideStarters;
   $('live-toggle-field').hidden = hideStarters;
+  $('screen-toggle-field').hidden = hideStarters || !screenAvailable;
 }
 
 function setTranscriptActions(hasTranscript) {
@@ -223,6 +227,8 @@ async function refreshMicrophones() {
   const microphone = $('record-microphone').value || preferences.microphone || '';
   const output = $('record-output').value || preferences.output || '';
   const result = await api.recordingDevices();
+  screenAvailable = result.screen === true;
+  setSourceState(Boolean(state.workspace?.path));
   $('device-error').hidden = !result.error;
   $('device-error').textContent = result.error ? 'Could not list audio devices: ' + result.error : '';
   fillDevices($('record-microphone'), result.error ? [] : result.microphones || [], 'System default', microphone, microphoneLabel);
@@ -236,7 +242,7 @@ function chosenProject() {
 }
 
 function safeSegment(value) {
-  return value.trim().replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ');
+  return value.trim().replace(/[\\/:*?"<>|]/g, '-');
 }
 
 async function updateSuggestion() {
@@ -266,6 +272,7 @@ function applyWorkspace() {
   $('stored-path').textContent = workspace.path ? `Saved as ${workspace.path}.` : 'The recording will be saved into this folder.';
   setSourceState(Boolean(workspace.path));
   setTranscriptActions(Boolean(workspace.transcriptPath));
+  resetTrim();
   if (workspace.transcriptPath) refreshOutputs();
   unlockedStep = workspace.transcriptPath ? 3 : workspace.path ? 2 : 1;
   go(unlockedStep);
@@ -342,11 +349,13 @@ function resetWorkspaceView() {
   $('fill').style.width = '0%';
   $('record-lang').disabled = false;
   $('live-toggle').disabled = false;
+  $('screen-toggle').disabled = false;
   $('record-microphone').disabled = false;
   $('record-output').disabled = false;
   applyPreferences();
   setSourceState(false);
   setTranscriptActions(false);
+  resetTrim();
   go(1);
 }
 
@@ -354,6 +363,7 @@ function stored(path) {
   updateWorkspacePaths(path, null);
   setSourceState(true);
   setTranscriptActions(false);
+  resetTrim();
   $('stored-path').textContent = `Saved as ${path}.`;
   unlockThrough(2);
   go(2);
@@ -463,6 +473,7 @@ function syncRecordingPanel() {
   $('start').disabled = pending;
   $('record-lang').disabled = pending;
   $('live-toggle').disabled = pending;
+  $('screen-toggle').disabled = pending;
   $('record-output').disabled = pending;
   if (pending) {
     $('record-toolbar-label').textContent = !recording.active
@@ -500,6 +511,12 @@ export async function prepareNewRecording() {
   selectProject(existing.some(tile => tile.dataset.project === preferred) ? preferred
     : existing.some(tile => tile.dataset.project === last) ? last : null);
 }
+
+// Transcription ends with the automatic AI correction. A correction started
+// from the meeting view belongs to that view, not to this workspace.
+const pipelineRunning = progress => ['transcribing', 'diarizing', 'merging'].includes(progress.stage)
+  || (progress.stage === 'cleaning' && progress.operation === 'transcribe');
+
 export function initWizard() {
   document.querySelectorAll('.step').forEach(button => {
     button.onclick = () => go(Number(button.dataset.step));
@@ -510,6 +527,7 @@ export function initWizard() {
   window.addEventListener('transcriber:preferences-changed', applyPreferences);
   refreshProjects();
   refreshMicrophones();
+  initTrim();
   applyWorkspace();
   $('live-draft-segments').addEventListener('scroll', () => {
     const wrap = $('live-draft-segments');
@@ -539,16 +557,14 @@ export function initWizard() {
       alert('A recording with this name already exists in the project. Choose a different name, or open it in the library.');
       return;
     }
-    const result = await api.mkdir(folder);
     $('create-workspace').disabled = false;
-    if (result.error) { alert('Error: ' + result.error); return; }
-    setWorkspace({project, folder: result.folder || folder, name});
+    // The folder appears when audio is saved into it, so a take that is
+    // cancelled or never started leaves no empty folder behind.
+    setWorkspace({project, folder, name});
     resetWorkspaceView();
     $('workspace-title').textContent = name;
-    $('workspace-path').textContent = result.folder || folder;
+    $('workspace-path').textContent = folder;
     location.hash = '#workspace';
-    window.dispatchEvent(new Event('transcriber:library-changed'));
-    refreshProjects();
   };
 
   $('workspace-rename').onclick = () => {
@@ -576,10 +592,14 @@ export function initWizard() {
   $('to-transcript').onclick = () => go(2);
   $('start').onclick = async () => {
     $('start').disabled = true;
+    const screen = screenAvailable && $('screen-toggle').checked;
+    const ready = $('source-status').textContent;
+    if (screen) $('source-status').textContent = 'Choose the screen or window to record in the desktop dialog…';
     const result = await api.startRecording(
       $('record-lang').value, $('live-toggle').checked,
-      $('record-microphone').value, $('record-output').value,
+      $('record-microphone').value, $('record-output').value, screen,
     );
+    $('source-status').textContent = ready;
     if (result.error) { $('start').disabled = false; alert('Error: ' + result.error); return; }
     setRecording(true, Date.now(), result.system_audio !== false);
   };
@@ -635,6 +655,7 @@ export function initWizard() {
     openMeeting(workspace.transcriptPath, workspace.path, workspace.name);
   };
   window.addEventListener('transcriber:transcribe-done', event => transcriptionDone(event.detail));
+  window.addEventListener('transcriber:recording-trimmed', () => { if (state.transcriptPath) refreshOutputs(); });
   window.addEventListener('transcriber:transcribe-start', async event => {
     const detail = typeof event.detail === 'string' ? {path: event.detail} : event.detail;
     workspaceFromPath(detail.path, detail.title, detail.hasTranscript);
@@ -643,7 +664,7 @@ export function initWizard() {
     go(2);
     const progress = await api.getProgress();
     if (
-      ['transcribing', 'diarizing', 'merging'].includes(progress.stage)
+      pipelineRunning(progress)
       && progress.source_path === detail.path
     ) watchProgress();
   });
@@ -689,7 +710,7 @@ export function initWizard() {
       watchSummaryProgress();
       return;
     }
-    if (!['transcribing', 'diarizing', 'merging'].includes(progress.stage) || !progress.source_path) return;
+    if (!pipelineRunning(progress) || !progress.source_path) return;
     workspaceFromPath(progress.source_path);
     applyWorkspace();
     unlockThrough(2);

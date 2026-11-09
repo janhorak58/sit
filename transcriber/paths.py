@@ -9,8 +9,12 @@ _ILLEGAL = re.compile(r'[\\/:*?"<>|]')
 
 
 def sanitize_component(name, fallback):
-    """Strip separators/reserved characters from a single file or folder name."""
-    name = _ILLEGAL.sub("_", (name or "").strip())
+    """Strip separators/reserved characters from a single file or folder name.
+
+    "-" stands in for them, as in the folder the UI names after the meeting,
+    so a recording's file and its folder carry the same name.
+    """
+    name = _ILLEGAL.sub("-", (name or "").strip())
     return name or fallback
 
 def valid_component(name):

@@ -394,7 +394,7 @@ def test_gateway_routes_every_service_with_one_key_and_no_tunnels(monkeypatch, t
         "llm": "http://gateway.example.test:4000",
     }
     llm = connections.get_connection("llm")
-    assert (llm["api_key"], llm["model"]) == ("sk-team", "qwen3.6-a3b-35b-nvfp4")
+    assert (llm["api_key"], llm["model"]) == ("sk-team", "spark/qwen3.6-a3b-35b-nvfp4")
     assert connections.get_connection("transcription")["model"] == "whisper-large-v3-turbo"
     assert connections.get_connection("diarization")["api_key"] == "sk-team"
     assert status["enabled"] is False

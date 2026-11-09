@@ -1,8 +1,8 @@
 """Speech-to-text backend selection.
 
 The work Spark endpoint is OpenAI-compatible. A fast probe decides whether to
-send the audio there, as 15-minute 32 kbps mp3 chunks (the endpoint caps upload
-size). Any probe or transcription failure falls back to the local Whisper
+send the audio there, as 15-minute lossless FLAC chunks (the endpoint caps
+upload size). Any probe or transcription failure falls back to the local Whisper
 model; an unavailable work endpoint never blocks transcription.
 """
 import array
@@ -13,13 +13,14 @@ import difflib
 import logging
 import math
 from pathlib import Path
+import re
 import subprocess
-import tempfile
 import wave
 
 import httpx
 
-from .config import LOCAL_ASR_DEFAULT_LANGUAGE
+from . import echo
+from .config import LOCAL_ASR_DEFAULT_LANGUAGE, work_dir
 from .connections import bearer_headers, get_connection
 from .models import get_local_asr
 
@@ -80,7 +81,7 @@ MODEL_AUDIO_FILTER = "highpass=f=70,lowpass=f=7900,afftdn=nr=8:nf=-35,speechnorm
 @contextlib.contextmanager
 def _model_audio(wav_path):
     """Yield an enhanced temporary WAV, falling back to the original on failure."""
-    with tempfile.TemporaryDirectory() as tmp:
+    with work_dir() as tmp:
         enhanced = Path(tmp) / "enhanced.wav"
         try:
             proc = subprocess.run(
@@ -105,21 +106,23 @@ def _model_audio(wav_path):
         yield enhanced
 
 
-# 15 min of 32 kbps mono mp3 is ~3.5 MB, comfortably under the remote's
-# per-file size limit whatever a meeting's real length turns out to be.
+# Lossless on purpose: 32 kbps mp3 cut the 7-8 kHz band where Czech sibilants
+# live and changed the transcript of the same meeting audibly, down to stock
+# Whisper hallucinations. 15 min of 16 kHz mono FLAC is ~10-16 MB, still under
+# the remote's per-file size limit whatever a meeting's real length turns out to be.
 CHUNK_SECONDS = 900
-def _mp3_chunks(wav_path, out_dir):
-    """Split+compress the wav into upload-sized mp3 slices, in order."""
+def _flac_chunks(wav_path, out_dir):
+    """Split the wav into upload-sized lossless FLAC slices, in order."""
     subprocess.run(
         [
             "ffmpeg", "-y", "-i", str(wav_path), "-vn", "-ac", "1",
-            "-c:a", "libmp3lame", "-b:a", "32k",
+            "-c:a", "flac",
             "-f", "segment", "-segment_time", str(CHUNK_SECONDS), "-reset_timestamps", "1",
-            str(Path(out_dir) / "part%04d.mp3"),
+            str(Path(out_dir) / "part%04d.flac"),
         ],
         check=True, capture_output=True, text=True,
     )
-    return sorted(Path(out_dir).glob("part*.mp3"))
+    return sorted(Path(out_dir).glob("part*.flac"))
 
 
 # Whisper-style decoders fill silence with short stock phrases ("Thank you.",
@@ -140,10 +143,10 @@ def _is_hallucination(raw):
     return float(no_speech) > NO_SPEECH_PROB_MAX and float(avg_logprob) < AVG_LOGPROB_MIN
 
 
-def _post_audio(path, language, timeout=3600.0, mime="audio/mpeg"):
+def _post_audio(path, language, timeout=3600.0, mime="audio/flac"):
     """One chunk -> (segments, duration), both relative to the chunk's own start.
 
-    ``mime`` matches whatever bytes ``path`` actually holds: mp3 for batch
+    ``mime`` matches whatever bytes ``path`` actually holds: FLAC for batch
     chunks, wav for a live-draft window posted straight through with no
     ffmpeg transcode.
     """
@@ -182,13 +185,13 @@ def _remote_transcribe(wav_path, language, on_segment, timeout=3600.0):
     """Chunked remote transcription; segment times are stitched back together.
 
     Chunk offsets come from the segmenter's own grid, not from the durations
-    the endpoint reports: mp3 encoder padding plus rounded ``duration`` values
-    accumulate into a drift of seconds over a long meeting, which then shifts
+    the endpoint reports: rounded ``duration`` values accumulate into a drift
+    of seconds over a long meeting, which then shifts
     every speaker label assigned against the (undrifted) diarization timeline.
     """
     segments = []
-    with tempfile.TemporaryDirectory() as tmp:
-        chunks = _mp3_chunks(wav_path, tmp)
+    with work_dir() as tmp:
+        chunks = _flac_chunks(wav_path, tmp)
         total = len(chunks) * CHUNK_SECONDS  # only drives the progress bar
         duration = 0.0
         for index, chunk in enumerate(chunks):
@@ -284,6 +287,48 @@ def drop_quiet_hallucinations(wav_path, segments):
     return kept
 
 
+# Whisper learned subtitle credits from its training data and writes them into
+# silence or noise ("Titulky vytvořil JohnyX."). A short segment that is only a
+# credit was never said.
+STOCK_CREDIT = re.compile(r"^\W*(?:(?:pod)?titulky\s+(?:vytvořil|připravil|přeložil)|subtitles\s+by)\b", re.I)
+STOCK_CREDIT_WORDS = 6
+# A decoder stuck in a loop repeats one short unit to the end of its window
+# ("ty ty ty ...", "tejtejtej", "????"), often with small slips, so everything
+# from the first long run on is dropped and one unit of it stays. Runs shorter
+# than LOOP_MIN_CHARS are speech ("100000", "ne, ne, ne"). A segment that was
+# nearly all loop and keeps at most LOOP_LEFTOVER_WORDS ("um,") goes entirely.
+REPEAT_LOOP = re.compile(r"(.{1,20}?)\1{4,}", re.S | re.I)
+LOOP_MIN_CHARS = 20
+LOOP_LEFTOVER_WORDS = 2
+
+
+def _cut_loop(text):
+    """Text up to and including one unit of its first long repetition run."""
+    for match in REPEAT_LOOP.finditer(text):
+        if len(match.group(0)) >= LOOP_MIN_CHARS:
+            return (text[:match.start()] + match.group(1)).strip()
+    return text
+
+
+def drop_stock_hallucinations(segments):
+    """Remove subtitle credits and cut decoder loops off."""
+    kept = []
+    for seg in segments:
+        text = seg.text.strip()
+        if STOCK_CREDIT.match(text) and len(text.split()) <= STOCK_CREDIT_WORDS:
+            log.info("Dropping subtitle credit at %.1fs: %r", seg.start, text)
+            continue
+        cut = _cut_loop(text)
+        if cut != text:
+            if len(cut) * 10 < len(text) and len(cut.split()) <= LOOP_LEFTOVER_WORDS or not any(ch.isalnum() for ch in cut):
+                log.info("Dropping repetition loop at %.1fs: %r", seg.start, text[:80])
+                continue
+            log.info("Cut a repetition loop at %.1fs: %r", seg.start, text[:80])
+            seg = dataclasses.replace(seg, text=cut)
+        kept.append(seg)
+    return kept
+
+
 # Track order written by the recorder's amerge; index is the wav channel.
 CHANNEL_LABELS = ("mic", "system")
 # A track whose loudest sample never gets near speech held nothing anybody
@@ -300,19 +345,54 @@ def wav_channels(wav_path):
         return 1
 
 
-@contextlib.contextmanager
-def channel_wav(wav_path, index):
-    """Yield one channel of a multi-track recording as its own mono wav."""
-    with tempfile.TemporaryDirectory() as tmp:
-        out = Path(tmp) / f"channel{index}.wav"
+def _echo_free_mic(wav_path, out):
+    """Write the recording's microphone track without speaker echo to ``out``.
+
+    False when that is not possible or not needed: no speexdsp, no system
+    track to cancel against, or a microphone that never heard the speakers.
+    """
+    if not echo.available() or wav_channels(wav_path) < 2:
+        return False
+    mic, system = out.with_name("mic.s16"), out.with_name("system.s16")
+    rate = str(echo.SAMPLE_RATE)
+    try:
         subprocess.run(
             [
-                "ffmpeg", "-y", "-i", str(wav_path), "-vn",
-                "-filter_complex", f"pan=mono|c0=c{index}",
-                "-c:a", "pcm_s16le", str(out),
+                "ffmpeg", "-y", "-i", str(wav_path), "-vn", "-filter_complex",
+                "[0:a]asplit=2[a][b];[a]pan=mono|c0=c0[mic];[b]pan=mono|c0=c1[sys]",
+                "-map", "[mic]", "-ar", rate, "-f", "s16le", str(mic),
+                "-map", "[sys]", "-ar", rate, "-f", "s16le", str(system),
             ],
             check=True, capture_output=True, text=True,
         )
+        return echo.cancel(mic, system, out)
+    except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+        log.warning("Echo cancellation failed; using the microphone track as recorded: %s", exc)
+        return False
+    finally:
+        mic.unlink(missing_ok=True)
+        system.unlink(missing_ok=True)
+
+
+@contextlib.contextmanager
+def channel_wav(wav_path, index):
+    """Yield one channel of a multi-track recording as its own mono wav.
+
+    The microphone track comes without the speakers' echo of the system
+    track. Left in, the far end's speech reached both the transcript and the
+    diarizer a second time, as if someone in the room had repeated it.
+    """
+    with work_dir() as tmp:
+        out = Path(tmp) / f"channel{index}.wav"
+        if CHANNEL_LABELS[index] != "mic" or not _echo_free_mic(wav_path, out):
+            subprocess.run(
+                [
+                    "ffmpeg", "-y", "-i", str(wav_path), "-vn",
+                    "-filter_complex", f"pan=mono|c0=c{index}",
+                    "-c:a", "pcm_s16le", str(out),
+                ],
+                check=True, capture_output=True, text=True,
+            )
         yield out
 
 
@@ -345,9 +425,8 @@ def _transcribe_mono(wav_path, language, on_segment, timeout):
                 log.warning("Spark transcription failed, falling back to local: %s", _last_remote_error)
         if transcript is None:
             transcript = _local_transcribe(model_audio, language, on_segment)
-        return dataclasses.replace(
-            transcript, segments=drop_quiet_hallucinations(model_audio, transcript.segments)
-        )
+        segments = drop_quiet_hallucinations(model_audio, transcript.segments)
+        return dataclasses.replace(transcript, segments=drop_stock_hallucinations(segments))
 
 
 # Speakers in the room reach the microphone a little after the loopback has
@@ -444,13 +523,14 @@ def transcribe_live(wav_path, language, timeout, remote_available):
         if remote_available:
             try:
                 segments, duration = _post_audio(model_audio, language, timeout=timeout, mime="audio/wav")
-                return Transcript(segments, duration, "spark")
+                return Transcript(drop_stock_hallucinations(segments), duration, "spark")
             except (httpx.HTTPError, ValueError, KeyError, OSError) as exc:
                 global _last_remote_error
                 detail = getattr(getattr(exc, "response", None), "text", "")
                 _last_remote_error = f"{exc} {detail}".strip()[:1000]
                 log.warning("Live draft window remote transcription failed, falling back to local: %s", _last_remote_error)
-        return _local_transcribe(model_audio, language, lambda segment, duration: None)
+        transcript = _local_transcribe(model_audio, language, lambda segment, duration: None)
+        return dataclasses.replace(transcript, segments=drop_stock_hallucinations(transcript.segments))
 
 
 def diagnose():
@@ -471,11 +551,11 @@ def diagnose():
         }
         return report
     try:
-        with tempfile.TemporaryDirectory() as tmp:
-            probe = Path(tmp) / "probe.mp3"
+        with work_dir() as tmp:
+            probe = Path(tmp) / "probe.flac"
             subprocess.run(
                 ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
-                 "-ac", "1", "-c:a", "libmp3lame", "-b:a", "32k", str(probe)],
+                 "-ac", "1", "-ar", "16000", "-c:a", "flac", str(probe)],
                 check=True, capture_output=True,
             )
             segments, _ = _post_audio(probe, "cs")

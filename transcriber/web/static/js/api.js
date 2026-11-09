@@ -19,7 +19,7 @@ async function get(url) {
   return body(await fetch(url));
 }
 
-export const startRecording = (language, live, microphone = '', output = '') => post('/start', {language, live, microphone, output});
+export const startRecording = (language, live, microphone = '', output = '', screen = false) => post('/start', {language, live, microphone, output, screen});
 export const recordingStatus = () => get('/recording/status');
 export const recordingDevices = () => get('/recording/devices');
 export const stopRecording = (folder, filename) => post('/stop', {folder, filename});
@@ -31,6 +31,8 @@ export const uploadAudio = async (file, folder, filename) => {
 export const transcribe = (path, language, num_speakers) =>
   post('/transcribe', {path, language, num_speakers});
 export const diarize = (path, num_speakers) => post('/diarize', {path, num_speakers});
+export const cleanup = path => post('/cleanup', {path});
+export const revertCleanup = path => post('/cleanup/revert', {path});
 export const getProgress = () => get('/progress');
 export const cancelJob = () => post('/progress/cancel');
 export const asrStatus = () => get('/asr/status');
@@ -68,5 +70,8 @@ export const deleteFolder = path => post('/library/folder/delete', {path});
 export const remove = path => post('/library/delete', {path});
 export const move = (folder, name, to_folder, to_name, wav_path) =>
   post('/library/move', {folder, name, to_folder, to_name, wav_path});
+export const recordingLevels = path => get('/library/levels?path=' + encodeURIComponent(path));
+export const trimRecording = (path, start, end) => post('/library/trim', {path, start, end});
 
 export const audioUrl = path => '/library/audio?path=' + encodeURIComponent(path);
+export const screenInfo = path => get('/library/screen?path=' + encodeURIComponent(path));

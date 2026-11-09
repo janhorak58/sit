@@ -112,6 +112,7 @@
             </div>
             <p id="device-error" class="field-error" hidden></p>
             <label id="live-toggle-field" class="live-toggle-field"><input id="live-toggle" type="checkbox"><span class="live-toggle-track" aria-hidden="true"></span><span class="live-toggle-copy"><b>Live transcript while recording</b><small>Optional rough preview. The complete recording is transcribed again after saving.</small></span></label>
+            <label id="screen-toggle-field" class="live-toggle-field" hidden><input id="screen-toggle" type="checkbox"><span class="live-toggle-track" aria-hidden="true"></span><span class="live-toggle-copy"><b>Record the screen too</b><small>Your desktop asks which screen or window to share. The video plays next to the transcript.</small></span></label>
             <div id="source-locked" class="source-locked" hidden><span>WAV</span><div><b>Recording is saved</b><small>It stays as the fixed input. Transcript, speakers, and analysis can be regenerated without recording again.</small></div><button id="to-transcript" class="small quiet" type="button">Open transcript step →</button></div>
             <div id="source-choices" class="source-grid">
               <button id="start" class="source-card" type="button"><span class="source-icon mic">●</span><b>Start recording</b><small>Selected microphone + system audio</small></button>
@@ -144,6 +145,25 @@
             </div>
             <div id="bar"><div id="fill"></div></div><p class="status-line" id="status">Ready.</p>
             <div class="diarize-action"><div><b>Speaker recognition</b><small>Re-label the finished transcript without running speech recognition again.</small></div><button id="diarize" class="quiet" type="button" disabled>Recognize speakers again</button></div>
+            <details id="trim-panel" class="advanced-options trim-panel"><summary>Trim recording <span>cut off a late start or a forgotten stop</span></summary>
+              <div class="advanced-body">
+                <div id="trim-wave" class="trim-wave" title="Click to play from here">
+                  <div id="trim-bars" class="trim-bars" role="img" aria-label="Recording loudness over time"></div>
+                  <div id="trim-mask-start" class="trim-mask start"></div><div id="trim-mask-end" class="trim-mask end"></div>
+                  <div id="trim-playhead" class="trim-playhead"></div>
+                  <input id="trim-start" class="trim-handle" type="range" min="0" max="1" step="any" value="0" aria-label="Keep from">
+                  <input id="trim-end" class="trim-handle" type="range" min="0" max="1" step="any" value="1" aria-label="Keep until">
+                </div>
+                <audio id="trim-audio" controls preload="metadata"></audio>
+                <div class="trim-controls">
+                  <span>Keep from <b id="trim-start-label">00:00</b></span><button id="trim-set-start" class="small quiet" type="button">Start here</button>
+                  <span>until <b id="trim-end-label">00:00</b></span><button id="trim-set-end" class="small quiet" type="button">End here</button>
+                  <span class="trim-kept">Keeps <b id="trim-kept-label">00:00</b></span>
+                  <button id="trim-apply" class="small primary" type="button" disabled>Trim</button>
+                </div>
+                <p id="trim-status" class="status-line">Drag the handles, or play the recording and set the start and end at the playhead. The transcript and speaker names follow the cut.</p>
+              </div>
+            </details>
             <div id="speaker-names" class="speaker-names" hidden></div>
             <div class="stage-actions"><button id="transcribe" class="primary" type="button">Generate transcript</button><button id="to-summary" class="primary" type="button" disabled>Continue to AI analysis →</button></div>
           </div>
@@ -193,7 +213,7 @@
         <div><p class="eyebrow">MEETING</p><div class="meeting-title-row"><h1 id="meeting-title">Transcript</h1><button id="meeting-rename" class="title-edit" type="button" aria-label="Rename meeting" title="Rename meeting">✎</button></div></div>
         <div class="workspace-header-actions"><button id="meeting-back" class="small quiet" type="button">← Library</button><button id="meeting-edit" class="small primary" type="button">Edit meeting</button></div>
       </header>
-      <div class="meeting-player"><audio id="meeting-audio" controls></audio><p id="meeting-meta" class="meeting-meta"></p></div>
+      <div class="meeting-player"><video id="meeting-screen" class="meeting-screen" muted playsinline preload="metadata" title="Double-click for full screen" hidden></video><audio id="meeting-audio" controls></audio><p id="meeting-meta" class="meeting-meta"></p></div>
       <div id="meeting-body" class="meeting-body"></div>
       <dialog id="meeting-artifact-dialog" class="transcript-dialog"><div class="transcript-dialog-head"><div><p class="eyebrow" id="meeting-artifact-kicker">MEETING OUTPUT</p><h2 id="meeting-artifact-title">Output</h2></div><button id="meeting-artifact-close" class="icon" type="button" aria-label="Close output">×</button></div><section id="meeting-artifact-body" class="meeting-transcript"></section></dialog>
     </div>
@@ -233,6 +253,11 @@
           <div class="section-switches"><span>Include sections</span><div class="section-switch-grid"><label class="setting-toggle"><input type="checkbox" data-path="brief.sections.chapters"><span>Timeline</span></label><label class="setting-toggle"><input type="checkbox" data-path="brief.sections.decisions"><span>Decisions</span></label><label class="setting-toggle"><input type="checkbox" data-path="brief.sections.action_items"><span>Action items</span></label><label class="setting-toggle"><input type="checkbox" data-path="brief.sections.open_questions"><span>Questions</span></label><label class="setting-toggle"><input type="checkbox" data-path="brief.sections.risks"><span>Risks</span></label><label class="setting-toggle"><input type="checkbox" data-path="brief.sections.speaker_contributions"><span>Speaker contributions</span></label><label class="setting-toggle"><input type="checkbox" data-path="brief.sections.follow_up"><span>Follow-up draft</span></label></div></div>
         </section>
         <section class="card customization-card customization-wide">
+          <header class="custom-card-head"><div><p class="eyebrow">AI CORRECTION</p><h2>Transcript cleanup</h2></div><p>AI fixes misheard words, names and punctuation. Timestamps and speakers stay unchanged, and the recognized text can be restored.</p></header>
+          <div class="custom-fields"><label><span>Names and terms</span><textarea class="editor-text" data-path="transcript.glossary" placeholder="Spellings the AI should use, e.g. Škoda, Trask, AWS, SQS"></textarea></label></div>
+          <div class="custom-toggles"><label class="setting-toggle"><input type="checkbox" data-path="transcript.auto_cleanup"><span>Correct every new transcript automatically</span></label></div>
+        </section>
+        <section class="card customization-card customization-wide">
           <header class="custom-card-head"><div><p class="eyebrow">PRIVACY & EXPORT</p><h2>Data handling</h2></div><p>Transcription has a local fallback. AI analysis currently requires gpt-oss and preserves the previous analysis if unavailable.</p></header>
           <div class="custom-fields two-column"><label><span>Processing preference</span><select data-path="privacy.processing"><option value="auto">Automatic — remote when available</option><option value="local">Prefer local processing</option><option value="remote">Prefer remote processing</option></select></label><label><span>Default export</span><select data-path="export.format"><option value="markdown">Markdown brief</option><option value="transcript">Plain transcript</option><option value="json">Structured JSON</option></select></label></div>
           <div class="custom-toggles"><label class="setting-toggle"><input type="checkbox" data-path="privacy.clear_live_drafts"><span>Clear live draft after saving</span></label><label class="setting-toggle"><input type="checkbox" data-path="export.include_audio_links"><span>Include audio timestamp links in exports</span></label></div>
@@ -259,7 +284,7 @@
               <div class="custom-fields">
                 <label><span>LiteLLM address</span><input type="url" data-connection-path="gateway.url" placeholder="http://marlene.cxi.tul.cz:4000"></label>
                 <label><span>Transcription model</span><input data-connection-path="gateway.transcription_model" placeholder="whisper-large-v3-turbo"></label>
-                <label><span>AI analysis model</span><input data-connection-path="gateway.llm_model" placeholder="qwen3.6-a3b-35b-nvfp4"></label>
+                <label><span>AI analysis model</span><input data-connection-path="gateway.llm_model" placeholder="spark/qwen3.6-a3b-35b-nvfp4"></label>
                 <label><span>Speaker recognition path</span><input data-connection-path="gateway.diarization_path" placeholder="/diarizer/v1/audio/diarizations"><small>LiteLLM pass-through route to the pyannote service. Empty = speakers are recognized on this computer.</small></label>
               </div>
             </details>

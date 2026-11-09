@@ -93,7 +93,7 @@ only come from a runtime driver mismatch.
 
 ## Client wiring
 
-The client posts 15-minute 32 kbps mp3 chunks and probes `/v1/models` before
+The client posts 15-minute lossless FLAC chunks (10 to 16 MB each) and probes `/v1/models` before
 each run; an unreachable service silently falls back to the local model on CPU.
 
 ```sh

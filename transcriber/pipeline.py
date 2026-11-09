@@ -9,11 +9,13 @@ import subprocess
 import threading
 
 from .asr import CHANNEL_LABELS, LOCAL_LABEL, REMOTE_LABEL, Segment, channel_wav, transcribe
+from .cleanup import correct_cues
 from .config import LOCAL_ASR_DEVICE, LOCAL_ASR_MODEL
 from .connections import bearer_headers, get_connection
 from .library import atomic_write_text, meeting_json_path_for
 from .models import get_diarize_pipeline
 from .paths import rel_to_data
+from .preferences import get_preferences
 from .progress import progress
 
 log = logging.getLogger(__name__)
@@ -222,6 +224,41 @@ def _speaker_turns(wav_path, num_speakers):
     return _local_speaker_turns(wav_path, num_speakers), "local", diarization["local_model"]
 
 
+# Model name recorded when the tracks alone settle who spoke.
+TRACKS_AS_SPEAKERS = "one speaker per track"
+
+
+def _cap_speakers(track_turns, num_speakers):
+    """Fold each track's smallest voices into its largest until ``num_speakers`` remain.
+
+    pyannote tends to split one voice into several clusters, and the stray
+    ones hold seconds of talk next to the real speaker's minutes. Every track
+    with any turns keeps at least its largest voice, then the remaining slots
+    go to the voices that talked longest overall.
+    """
+    talk = {}
+    for label, turns in track_turns.items():
+        for turn in turns:
+            key = (label, turn["speaker"])
+            talk[key] = talk.get(key, 0.0) + float(turn["end"]) - float(turn["start"])
+    ranked = sorted(talk, key=talk.get, reverse=True)
+    largest = {}
+    for label, speaker in ranked:
+        largest.setdefault(label, speaker)
+    kept = {(label, speaker) for label, speaker in largest.items()}
+    for key in ranked:
+        if len(kept) >= num_speakers:
+            break
+        kept.add(key)
+    return {
+        label: [
+            turn if (label, turn["speaker"]) in kept else {**turn, "speaker": largest[label]}
+            for turn in turns
+        ]
+        for label, turns in track_turns.items()
+    }
+
+
 def label_speakers(wav_path, segments, num_speakers):
     """Attach labels using Spark first, with the local model as fallback.
 
@@ -229,6 +266,11 @@ def label_speakers(wav_path, segments, num_speakers):
     separate the room from the machine perfectly, so mixing them down would
     only ask pyannote to rediscover that split - badly, since the same voice
     reaches both. Labels are namespaced per track and can never collide.
+
+    ``num_speakers`` counts people in the whole meeting. When it is no more
+    than the tracks that carry speech, each track is one person and pyannote
+    is not asked at all. Otherwise each track is diarized freely and the
+    result is folded down to that count.
     """
     channels = sorted({seg.channel for seg in segments if seg.channel})
     if not channels:
@@ -238,19 +280,29 @@ def label_speakers(wav_path, segments, num_speakers):
             [part for seg in segments for part in split_by_speaker(seg, turns)], backend, model
         )
 
-    labeled, backends, model = [], [], get_connection("diarization")["local_model"]
+    tracked = [seg for seg in segments if seg.channel]
+    if num_speakers and num_speakers <= len(channels):
+        progress.update(stage="merging", percent=95, message="Assembling output...")
+        return DiarizationResult(
+            [dataclasses.replace(seg, speaker=f"{seg.channel.upper()}_SPEAKER_00") for seg in tracked],
+            "local",
+            TRACKS_AS_SPEAKERS,
+        )
+
+    track_turns, backends, model = {}, [], get_connection("diarization")["local_model"]
     for label in channels:
-        index = CHANNEL_LABELS.index(label)
-        track_segments = [seg for seg in segments if seg.channel == label]
-        with channel_wav(wav_path, index) as track:
-            # num_speakers counts people in the room, not per track, so the
-            # model is left to decide how many voices each track carries.
-            turns, backend, model = _speaker_turns(track, None)
+        with channel_wav(wav_path, CHANNEL_LABELS.index(label)) as track:
+            # The meeting's count says nothing about how it splits across
+            # tracks, so each track is diarized freely and capped below.
+            track_turns[label], backend, model = _speaker_turns(track, None)
         backends.append(backend)
-        prefix = label.upper()
-        for seg in track_segments:
-            for part in split_by_speaker(seg, turns):
-                labeled.append(dataclasses.replace(part, speaker=f"{prefix}_{part.speaker}"))
+    if num_speakers:
+        track_turns = _cap_speakers(track_turns, num_speakers)
+
+    labeled = []
+    for seg in tracked:
+        for part in split_by_speaker(seg, track_turns[seg.channel]):
+            labeled.append(dataclasses.replace(part, speaker=f"{seg.channel.upper()}_{part.speaker}"))
     labeled.sort(key=lambda seg: seg.start)
     progress.update(stage="merging", percent=95, message="Assembling output...")
     return DiarizationResult(labeled, backends[0] if len(set(backends)) == 1 else "local", model)
@@ -289,6 +341,9 @@ def rerun_diarization(wav_path, txt_path, num_speakers):
         text = render_text(segments)
         atomic_write_text(txt_path, text)
         data["num_speakers"] = num_speakers
+        # The split cues no longer map to the recognized text kept for undo,
+        # so the corrected text becomes the new base.
+        data.pop("cleanup", None)
         data["diarization"] = {
             "backend": diarization.backend,
             "where": REMOTE_LABEL if diarization.backend == "spark" else LOCAL_LABEL,
@@ -335,6 +390,105 @@ def start_diarization(wav_path, txt_path, num_speakers):
     return True
 
 
+def _project_of(txt_path):
+    parts = rel_to_data(txt_path).split("/")
+    return parts[0] if len(parts) > 1 else ""
+
+
+def correct_records(records, txt_path, language, on_batch=None):
+    """Apply AI corrections to meeting.json segment dicts in place.
+
+    The first recognized text of a corrected cue stays in ``original_text``,
+    so ``restore_recognized_text`` can undo any number of correction runs.
+    """
+    glossary = get_preferences()["transcript"]["glossary"]
+    fixes, model = correct_cues(records, glossary, _project_of(txt_path), language, on_batch)
+    for index, text in fixes.items():
+        records[index].setdefault("original_text", records[index]["text"])
+        records[index]["text"] = text
+    return {
+        "model": model,
+        "changed": len(fixes),
+        "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+    }
+
+
+def render_records(records):
+    """Plain-text transcript for meeting.json segment dicts."""
+    fields = {field.name for field in dataclasses.fields(Segment)}
+    return render_text([Segment(**{key: value for key, value in record.items() if key in fields}) for record in records])
+
+
+def _report_batch(start, span):
+    def report(done, total):
+        progress.update(
+            percent=start + span * done // total,
+            message=f"Correcting the transcript with AI ({done + 1}/{total})...",
+        )
+    return report
+
+
+def rerun_cleanup(txt_path):
+    """Correct an existing transcript with AI, keeping timestamps and speakers."""
+    try:
+        meeting_path = meeting_json_path_for(txt_path)
+        data = json.loads(meeting_path.read_text())
+        records = data.get("segments") or []
+        cleanup = correct_records(records, txt_path, data.get("language"), _report_batch(0, 99))
+        if cleanup["changed"]:
+            data["cleanup"] = cleanup
+            data["analysis_stale"] = True
+            text = render_records(records)
+            atomic_write_text(txt_path, text)
+            atomic_write_text(meeting_path, json.dumps(data, ensure_ascii=False, indent=2))
+        progress.finish(
+            stage="done",
+            percent=100,
+            message=(
+                f"AI corrected {cleanup['changed']} transcript cues."
+                if cleanup["changed"] else "AI found nothing to correct."
+            ),
+            warning=None,
+            saved_path=rel_to_data(txt_path),
+        )
+    except Exception as exc:
+        progress.finish(stage="error", message=str(exc), error=str(exc))
+
+
+def start_cleanup(txt_path):
+    """Start AI correction of an existing transcript, returning False if busy."""
+    if not progress.begin(
+        stage="cleaning",
+        percent=0,
+        message="Correcting the transcript with AI...",
+        source_path=rel_to_data(txt_path),
+        operation="cleanup",
+        saved_path=rel_to_data(txt_path),
+    ):
+        return False
+    threading.Thread(target=rerun_cleanup, args=(txt_path,), daemon=True).start()
+    return True
+
+
+def restore_recognized_text(txt_path):
+    """Undo every AI correction, returning cues to the recognized text."""
+    meeting_path = meeting_json_path_for(txt_path)
+    data = json.loads(meeting_path.read_text())
+    records = data.get("segments") or []
+    restored = 0
+    for record in records:
+        if "original_text" in record:
+            record["text"] = record.pop("original_text")
+            restored += 1
+    data.pop("cleanup", None)
+    if restored:
+        data["analysis_stale"] = True
+    atomic_write_text(txt_path, render_records(records))
+    atomic_write_text(meeting_path, json.dumps(data, ensure_ascii=False, indent=2))
+    return {"segments": records, "restored": restored}
+
+
+
 def run_pipeline(wav_path, txt_path, language, num_speakers):
     """Blocking end-to-end run; all state is reported through ``progress``."""
     try:
@@ -359,7 +513,17 @@ def run_pipeline(wav_path, txt_path, language, num_speakers):
                 )
                 segments = result.segments
 
-        text = render_text(segments)
+        records = [dataclasses.asdict(seg) for seg in segments]
+        cleanup, cleanup_warning = None, None
+        if get_preferences()["transcript"]["auto_cleanup"] and get_connection("llm")["endpoint"]:
+            progress.update(stage="cleaning", percent=90, message="Correcting the transcript with AI...")
+            try:
+                cleanup = correct_records(records, txt_path, language, _report_batch(90, 9))
+            except Exception as exc:
+                log.warning("AI correction failed, keeping the recognized text: %s", exc)
+                cleanup_warning = "AI correction is unavailable right now, so the transcript keeps the recognized text."
+
+        text = render_records(records)
         txt_path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_text(txt_path, text)
         diarized = any(seg.speaker for seg in segments)
@@ -389,15 +553,17 @@ def run_pipeline(wav_path, txt_path, language, num_speakers):
                 "applied": diarized,
                 "note": warning,
             },
-            "segments": [dataclasses.asdict(seg) for seg in segments],
+            "segments": records,
+            "cleanup": cleanup if cleanup and cleanup["changed"] else None,
             "analysis_stale": False,
         }, ensure_ascii=False, indent=2))
 
+        notes = " ".join(note for note in (warning, cleanup_warning) if note) or None
         progress.finish(
             stage="done",
             percent=100,
-            message="Done." if not warning else warning,
-            warning=warning,
+            message=notes or "Done.",
+            warning=notes,
             text=text,
             saved_path=rel_to_data(txt_path),
             diarization_backend=diarization_backend,

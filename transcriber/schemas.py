@@ -10,6 +10,8 @@ class StartReq(BaseModel):
     microphone: str = ""
     # Sink whose monitor is recorded as the system-audio track; "" = default sink.
     output: str = ""
+    # Also record a monitor or window, picked in the desktop's sharing dialog.
+    screen: bool = False
 
 
 class StopReq(BaseModel):
@@ -26,6 +28,10 @@ class TranscribeReq(BaseModel):
 class DiarizeReq(BaseModel):
     path: str
     num_speakers: int | None = None
+
+
+class CleanupReq(BaseModel):
+    path: str
 
 
 class MkdirReq(BaseModel):
@@ -47,6 +53,12 @@ class MoveReq(BaseModel):
 
 class DeleteReq(BaseModel):
     path: str
+
+
+class TrimReq(BaseModel):
+    path: str
+    start: float
+    end: float
 
 
 class SuggestReq(BaseModel):

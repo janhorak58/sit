@@ -18,6 +18,24 @@ def test_asr_falls_back_to_local_when_remote_transcription_fails(monkeypatch, tm
     monkeypatch.setattr(asr, "_local_transcribe", lambda *args: expected)
     assert asr.transcribe(wav, "en").backend == "local"
 
+def test_stock_whisper_hallucinations_are_removed_but_real_repetition_stays():
+    texts = [
+        "Titulky vytvořil JohnyX.",
+        "Májtej" + "tej" * 200,
+        "Já si beru kávu." + "?" * 80,
+        "um, " * 300,
+        "Ne, ne, ne, to nechci.",
+        "Stálo to 100000 korun.",
+        "Titulky vytvořil kolega, tak se na ně podíváme a pak je pošleme dál.",
+    ]
+    kept = asr.drop_stock_hallucinations([asr.Segment(i, i + 1, text) for i, text in enumerate(texts)])
+    assert [(seg.start, seg.text) for seg in kept] == [
+        (2, "Já si beru kávu.?"),
+        (4, "Ne, ne, ne, to nechci."),
+        (5, "Stálo to 100000 korun."),
+        (6, texts[6]),
+    ]
+
 def test_transcribe_enhances_audio_before_sending_it_to_the_model(monkeypatch, tmp_path):
     wav = tmp_path / "meeting.wav"
     wav.write_bytes(b"original")
@@ -446,6 +464,76 @@ def test_run_pipeline_falls_back_when_diarization_is_unavailable(monkeypatch, tm
     assert data["segments"] == [{"start": 0, "end": 1, "text": "hello", "speaker": None, "channel": None}]
 
 
+def test_ai_correction_keeps_only_corrections_of_requested_cues(monkeypatch):
+    from transcriber import cleanup
+
+    sent = {}
+
+    def fake_post(url, **kwargs):
+        sent["prompt"] = kwargs["json"]["messages"][1]["content"]
+        answer = {"cues": [
+            {"id": 0, "text": "[0] Jan: We moved the queues to AWS."},
+            {"id": 1, "text": "A completely different sentence about cats and dogs."},
+            {"id": 7, "text": "Not a cue of this batch."},
+        ]}
+        return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"choices": [{"message": {"content": json.dumps(answer)}}]})
+
+    monkeypatch.setattr(cleanup, "get_connection", lambda name: {"endpoint": "http://llm", "model": "qwen", "api_key": ""})
+    monkeypatch.setattr(cleanup.httpx, "post", fake_post)
+    cues = [{"text": "we moved the queues to AVS", "speaker": "Jan"}, {"text": "ok so friday then", "speaker": "Eva"}]
+
+    fixes, model = cleanup.correct_cues(cues, glossary="AWS, SQS", project="Cloud")
+
+    assert fixes == {0: "We moved the queues to AWS."}
+    assert model == "qwen"
+    assert "AWS, SQS" in sent["prompt"] and "[1] Eva: ok so friday then" in sent["prompt"]
+
+
+def test_ai_correction_is_saved_with_the_recognized_text_and_can_be_undone(monkeypatch, tmp_path):
+    from transcriber import pipeline as pipeline_module
+
+    txt_path = tmp_path / "meeting.txt"
+    monkeypatch.setattr(pipeline_module, "rel_to_data", lambda p: str(p))
+    monkeypatch.setattr(pipeline_module, "transcribe", lambda *a, **k: asr.Transcript(
+        [asr.Segment(0, 1, "we use AVS"), asr.Segment(1, 2, "fine")], 2, "local"))
+    monkeypatch.setattr(pipeline_module, "correct_cues", lambda *a, **k: ({0: "We use AWS."}, "qwen"))
+
+    pipeline_module.run_pipeline(tmp_path / "meeting.wav", txt_path, "en", num_speakers=1)
+
+    meeting_path = pipeline_module.meeting_json_path_for(txt_path)
+    data = json.loads(meeting_path.read_text())
+    assert txt_path.read_text() == "We use AWS.\nfine"
+    assert data["segments"][0] == {"start": 0, "end": 1, "text": "We use AWS.", "original_text": "we use AVS", "speaker": None, "channel": None}
+    assert "original_text" not in data["segments"][1]
+    assert data["cleanup"]["changed"] == 1 and data["cleanup"]["model"] == "qwen"
+
+    result = pipeline_module.restore_recognized_text(txt_path)
+
+    data = json.loads(meeting_path.read_text())
+    assert result["restored"] == 1
+    assert txt_path.read_text() == "we use AVS\nfine"
+    assert data["segments"][0] == {"start": 0, "end": 1, "text": "we use AVS", "speaker": None, "channel": None}
+    assert "cleanup" not in data
+
+
+def test_failed_ai_correction_keeps_the_recognized_transcript(monkeypatch, tmp_path):
+    from transcriber import pipeline as pipeline_module
+
+    txt_path = tmp_path / "meeting.txt"
+    monkeypatch.setattr(pipeline_module, "rel_to_data", lambda p: str(p))
+    monkeypatch.setattr(pipeline_module, "transcribe", lambda *a, **k: asr.Transcript([asr.Segment(0, 1, "hello")], 1, "local"))
+    monkeypatch.setattr(pipeline_module, "correct_cues", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("LLM down")))
+
+    pipeline_module.run_pipeline(tmp_path / "meeting.wav", txt_path, "en", num_speakers=1)
+
+    state = pipeline_module.progress.snapshot()
+    assert state["stage"] == "done"
+    assert "AI correction is unavailable" in state["warning"]
+    assert txt_path.read_text() == "hello"
+    assert json.loads(pipeline_module.meeting_json_path_for(txt_path).read_text())["cleanup"] is None
+
+
+
 def test_rerun_diarization_relabels_existing_segments_without_asr(monkeypatch, tmp_path):
     from transcriber import pipeline as pipeline_module
     from transcriber.progress import Progress
@@ -579,6 +667,68 @@ def test_label_speakers_falls_back_locally_when_spark_fails(monkeypatch, tmp_pat
     assert result.segments[0].speaker == "SPEAKER_00"
 
 
+def _two_track_segments():
+    return [
+        asr.Segment(0.0, 4.0, "room one two three", channel="mic"),
+        asr.Segment(4.0, 8.0, "remote four five six", channel="system"),
+        asr.Segment(8.0, 12.0, "room seven eight nine", channel="mic"),
+    ]
+
+
+def test_two_tracks_with_two_speakers_label_one_person_per_track(monkeypatch, tmp_path):
+    from transcriber import pipeline as pipeline_module
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "_speaker_turns",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("diarizer ran")),
+    )
+
+    result = pipeline_module.label_speakers(tmp_path / "meeting.wav", _two_track_segments(), 2)
+
+    assert [seg.speaker for seg in result.segments] == [
+        "MIC_SPEAKER_00", "SYSTEM_SPEAKER_00", "MIC_SPEAKER_00",
+    ]
+
+
+def test_two_tracks_fold_stray_voices_down_to_the_requested_count(monkeypatch, tmp_path):
+    from contextlib import contextmanager
+
+    from transcriber import pipeline as pipeline_module
+
+    @contextmanager
+    def fake_channel_wav(_wav, index):
+        yield index
+
+    # The room holds two real voices plus a two-second stray cluster, the
+    # speakers carry one voice plus a one-second stray cluster.
+    turns_by_track = {
+        0: [
+            {"start": 0.0, "end": 4.0, "speaker": "SPEAKER_00"},
+            {"start": 8.0, "end": 10.0, "speaker": "SPEAKER_02"},
+            {"start": 10.0, "end": 12.0, "speaker": "SPEAKER_01"},
+            {"start": 12.0, "end": 15.0, "speaker": "SPEAKER_01"},
+        ],
+        1: [
+            {"start": 4.0, "end": 7.0, "speaker": "SPEAKER_00"},
+            {"start": 7.0, "end": 8.0, "speaker": "SPEAKER_01"},
+        ],
+    }
+    monkeypatch.setattr(pipeline_module, "channel_wav", fake_channel_wav)
+    monkeypatch.setattr(
+        pipeline_module, "get_connection", lambda name: {"local_model": "pyannote-local"}
+    )
+    monkeypatch.setattr(
+        pipeline_module, "_speaker_turns", lambda track, _n: (turns_by_track[track], "local", "m")
+    )
+
+    result = pipeline_module.label_speakers(tmp_path / "meeting.wav", _two_track_segments(), 3)
+
+    assert {seg.speaker for seg in result.segments} == {
+        "MIC_SPEAKER_00", "MIC_SPEAKER_01", "SYSTEM_SPEAKER_00",
+    }
+
+
 def test_browse_reports_segments_and_summary_json_flags(monkeypatch, tmp_path):
     from transcriber import library, paths
 
@@ -591,6 +741,78 @@ def test_browse_reports_segments_and_summary_json_flags(monkeypatch, tmp_path):
     items = {item["name"]: item for item in library.browse("")["items"]}
     assert items["meeting"]["segments"] is True
     assert items["meeting"]["summary_json"] is True
+
+
+def test_browse_lists_newest_recordings_and_folders_first(monkeypatch, tmp_path):
+    from transcriber import library, paths
+
+    monkeypatch.setattr(library, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(paths, "DATA_DIR", tmp_path)
+    # Creation times by path relative to the library; anything else is "now".
+    made = {
+        "Team/Older": 100, "Team/Older/audio/Older.wav": 105,
+        # Trimmed after the transcript existed: the replaced wav is new, the
+        # transcript still dates the meeting.
+        "Team/Trimmed": 300, "Team/Trimmed/Trimmed.txt": 301, "Team/Trimmed/audio/Trimmed.wav": 900,
+        "Team/loose.txt": 200,
+        "Team/Archive 2024": 50, "Team/Archive 2025": 60,
+    }
+    monkeypatch.setattr(library, "created_at", lambda p: made.get(p.relative_to(tmp_path).as_posix(), 1000))
+    for rel in ("Team/Older/audio/Older.wav", "Team/Trimmed/audio/Trimmed.wav"):
+        (tmp_path / rel).parent.mkdir(parents=True)
+        (tmp_path / rel).write_bytes(b"")
+    (tmp_path / "Team/Trimmed/Trimmed.txt").write_text("hi")
+    (tmp_path / "Team/loose.txt").write_text("hi")
+    (tmp_path / "Team/Archive 2024/old").mkdir(parents=True)
+    (tmp_path / "Team/Archive 2025/old").mkdir(parents=True)
+
+    listing = library.browse("Team")
+
+    assert [item["name"] for item in listing["items"]] == ["Trimmed", "loose", "Older"]
+    assert listing["subfolders"] == ["Archive 2025", "Archive 2024"]
+
+
+def test_saved_recording_shares_its_folder_name_and_lists_as_a_meeting(monkeypatch, tmp_path):
+    from transcriber import library, paths
+
+    monkeypatch.setattr(library, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(paths, "DATA_DIR", tmp_path)
+    take = tmp_path / "take.wav"
+    take.write_bytes(b"")
+
+    # The folder is named the way the UI names it ("/" and ":" become "-").
+    library.store_recording(take, "Team/Recording 11-6-2026 02-45 PM", "Recording 11/6/2026 02:45 PM")
+
+    listing = library.browse("Team")
+    assert listing["subfolders"] == []
+    assert [(item["dir"], item["name"]) for item in listing["items"]] == [
+        ("Team/Recording 11-6-2026 02-45 PM", "Recording 11-6-2026 02-45 PM"),
+    ]
+
+
+def test_older_recording_folders_list_and_rename_as_their_meeting(monkeypatch, tmp_path):
+    from transcriber import library, paths
+
+    monkeypatch.setattr(library, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(paths, "DATA_DIR", tmp_path)
+    # Saved before file and folder names agreed: "_" in the file, "-" in the folder.
+    holder = tmp_path / "Team" / "Recording 9-10-2026 01-10 PM"
+    (holder / "audio").mkdir(parents=True)
+    (holder / "audio" / "Recording 9_10_2026 01_10 PM.wav").write_bytes(b"")
+    (holder / "Recording 9_10_2026 01_10 PM.txt").write_text("hi")
+    (tmp_path / "Team" / "Notes").mkdir()
+    (tmp_path / "Team" / "Notes" / "other.txt").write_text("hi")
+
+    listing = library.browse("Team")
+    assert listing["subfolders"] == ["Notes"]
+    assert [item["name"] for item in listing["items"]] == ["Recording 9_10_2026 01_10 PM"]
+
+    result = library.move_item(
+        "Team/Recording 9-10-2026 01-10 PM", "Recording 9_10_2026 01_10 PM", "Team/Recording 9-10-2026 01-10 PM",
+        "Planning", "Team/Recording 9-10-2026 01-10 PM/audio/Recording 9_10_2026 01_10 PM.wav",
+    )
+    assert result["folder"] == "Team/Planning"
+    assert (tmp_path / "Team/Planning/audio/Planning.wav").is_file()
 
 
 def test_move_item_moves_meeting_and_summary_json_sidecars(monkeypatch, tmp_path):
@@ -800,14 +1022,14 @@ def test_upload_converts_arbitrary_audio_and_stores_it(monkeypatch, tmp_path):
 def test_remote_transcription_stitches_chunk_timestamps(monkeypatch, tmp_path):
     from pathlib import Path
 
-    monkeypatch.setattr(asr, "_mp3_chunks", lambda wav, out: [Path("a.mp3"), Path("b.mp3")])
+    monkeypatch.setattr(asr, "_flac_chunks", lambda wav, out: [Path("a.flac"), Path("b.flac")])
     bodies = iter([
         {"duration": 900.0, "segments": [{"start": 0, "end": 5, "text": "první"}]},
         {"duration": 300.0, "segments": [{"start": 10, "end": 15, "text": "druhý"}]},
     ])
     monkeypatch.setattr(asr, "_post_audio", lambda path, lang, **kwargs: (
         [asr.Segment(float(s["start"]), float(s["end"]), s["text"]) for s in next(bodies)["segments"]],
-        900.0 if path.name == "a.mp3" else 300.0,
+        900.0 if path.name == "a.flac" else 300.0,
     ))
 
     result = asr._remote_transcribe(tmp_path / "m.wav", "cs", lambda seg, total: None)
@@ -823,7 +1045,7 @@ def test_remote_error_body_under_http_200_falls_back_to_local(monkeypatch, tmp_p
     wav = tmp_path / "m.wav"
     wav.write_bytes(b"RIFF")
     monkeypatch.setattr(asr, "remote_status", lambda: {"available": True})
-    monkeypatch.setattr(asr, "_mp3_chunks", lambda w, out: [wav])
+    monkeypatch.setattr(asr, "_flac_chunks", lambda w, out: [wav])
     monkeypatch.setattr(asr.httpx, "post", lambda *a, **k: SimpleNamespace(
         raise_for_status=lambda: None,
         json=lambda: {"error": {"message": "Please install vllm[audio] for audio support"}},

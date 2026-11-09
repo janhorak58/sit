@@ -196,6 +196,24 @@ input:focus, select:focus { border-color: var(--primary-2); box-shadow: 0 0 0 2p
 .diarize-action b, .diarize-action small { display: block; }
 .diarize-action b { font-size: 13px; }
 .diarize-action small { margin-top: 3px; color: var(--muted); font-size: 11px; }
+.trim-panel { margin-top: 18px; }
+.trim-wave { position: relative; height: 72px; cursor: pointer; background: var(--soft); }
+.trim-bars { position: absolute; inset: 0; display: flex; align-items: center; gap: 1px; }
+.trim-bars span { flex: 1 1 0; min-width: 0; background: var(--primary-2); opacity: .55; }
+.trim-mask { position: absolute; top: 0; bottom: 0; width: 0; pointer-events: none; background: rgba(255, 255, 255, .78); }
+.trim-mask.start { left: 0; border-right: 2px solid var(--primary); }
+.trim-mask.end { right: 0; border-left: 2px solid var(--primary); }
+.trim-playhead { position: absolute; top: 0; bottom: 0; left: 0; width: 1px; pointer-events: none; background: var(--ink); }
+.trim-handle, .trim-handle:focus { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; box-shadow: none; pointer-events: none; background: none; appearance: none; -webkit-appearance: none; }
+.trim-handle::-webkit-slider-runnable-track { height: 100%; background: none; }
+.trim-handle::-webkit-slider-thumb { width: 12px; height: 72px; pointer-events: auto; cursor: ew-resize; border: 0; background: var(--primary); opacity: .85; -webkit-appearance: none; }
+.trim-handle::-moz-range-track { height: 100%; background: none; }
+.trim-handle::-moz-range-thumb { width: 12px; height: 72px; pointer-events: auto; cursor: ew-resize; border: 0; border-radius: 0; background: var(--primary); opacity: .85; }
+.trim-panel audio { width: 100%; }
+.trim-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 12px; }
+.trim-controls b { font: 500 12px DM Mono, monospace; }
+.trim-kept { margin-left: auto; color: var(--muted); }
+.trim-panel .status-line { margin-top: 0; }
 .summary-offer { padding: 18px; display: flex; align-items: center; justify-content: space-between; gap: 18px; border-left: 3px solid var(--accent); background: var(--soft); }
 .summary-offer b, .summary-offer span { display: block; }
 .summary-offer span { margin-top: 4px; color: var(--muted); font-size: 11px; }
@@ -277,6 +295,8 @@ input:focus, select:focus { border-color: var(--primary-2); box-shadow: 0 0 0 2p
 button.icon { padding: 3px 7px; border: 0; color: var(--muted); background: transparent; font-size: 21px; }
 
 #meeting-audio { width: 100%; display: block; }
+/* Sticky with the audio, so it stays short enough to leave room for the transcript. */
+.meeting-screen { display: block; width: 100%; max-height: 36vh; margin-bottom: 12px; object-fit: contain; background: #000; cursor: zoom-in; }
 .meeting-player { position: sticky; top: 0; z-index: 5; padding: 14px 18px; border: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow); }
 .meeting-meta { margin: 10px 0 0; color: var(--muted); font-size: 11px; }
 .meeting-body { display: grid; gap: 24px; align-items: start; margin-top: 24px; }

@@ -8,12 +8,15 @@ from .. import library
 from ..errors import AppError
 from ..paths import resolve_in_data
 from ..pdf_export import render_summary_pdf
+from ..progress import progress
+from ..screen import describe as describe_screen
 from ..schemas import (
     DeleteReq,
     FolderRenameReq,
     MkdirReq,
     MoveReq,
     RenameSpeakersReq,
+    TrimReq,
     UpdateTranscriptReq,
 )
 
@@ -84,7 +87,40 @@ def audio(path: str):
     target = resolve_in_data(path)
     if target is None or not target.is_file():
         raise AppError("Recording not found.")
-    return FileResponse(target, media_type="audio/wav")
+    # Trimming rewrites the file in place, so the player must revalidate.
+    return FileResponse(target, media_type="audio/wav", headers={"Cache-Control": "no-cache"})
+
+
+@router.get("/library/levels")
+def levels(path: str):
+    return library.recording_levels(path)
+
+
+@router.get("/library/screen")
+def screen_info(path: str):
+    """Where the meeting's screen video plays and how it lines up with the audio."""
+    video = library.screen_video(path)
+    if video is None:
+        return {"url": None}
+    lead, duration = describe_screen(video)
+    return {"url": f"/library/screen-video?path={quote(path)}", "offset": lead, "duration": duration}
+
+
+@router.get("/library/screen-video")
+def screen_file(path: str):
+    video = library.screen_video(path)
+    if video is None:
+        raise AppError("Screen video not found.")
+    # Trimming rewrites the file in place, so the player must revalidate.
+    return FileResponse(video, media_type="video/webm", headers={"Cache-Control": "no-cache"})
+
+
+
+@router.post("/library/trim")
+def trim(req: TrimReq):
+    if progress.active():
+        raise AppError("Wait until the current processing step finishes, then trim.")
+    return {"ok": True, **library.trim_recording(req.path, req.start, req.end)}
 
 
 @router.post("/library/move")
