@@ -472,7 +472,7 @@ def test_ai_correction_keeps_only_corrections_of_requested_cues(monkeypatch):
     def fake_post(url, **kwargs):
         sent["prompt"] = kwargs["json"]["messages"][1]["content"]
         answer = {"cues": [
-            {"id": 0, "text": "Jan: We moved the queues to AWS."},
+            {"id": 0, "text": "[0] Jan: We moved the queues to AWS."},
             {"id": 1, "text": "A completely different sentence about cats and dogs."},
             {"id": 7, "text": "Not a cue of this batch."},
         ]}

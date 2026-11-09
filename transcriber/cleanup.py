@@ -9,6 +9,7 @@ dropped, and the recognized text is kept.
 
 import difflib
 import logging
+import re
 
 import httpx
 
@@ -28,6 +29,7 @@ MAX_ANSWER_TOKENS = 4096
 CONTEXT_CUES = 3
 # Character similarity below this means the model rewrote the cue.
 MIN_SIMILARITY = 0.5
+ECHOED_ID = re.compile(r"^\[\d+\]\s*")
 
 
 SYSTEM_PROMPT = """You correct speech-recognition errors in a meeting transcript.
@@ -81,7 +83,8 @@ def _batches(texts):
 def _accepted(original, corrected, speaker):
     """The corrected cue, or None when it is unchanged or a rewrite."""
     corrected = corrected.strip() if isinstance(corrected, str) else ""
-    # The model sometimes copies the line's "speaker:" prefix into the text.
+    # The model sometimes copies the line's "[id] speaker:" prefix into the text.
+    corrected = ECHOED_ID.sub("", corrected)
     if speaker and corrected.startswith(f"{speaker}:"):
         corrected = corrected[len(speaker) + 1:].strip()
     if not corrected or corrected == original:
