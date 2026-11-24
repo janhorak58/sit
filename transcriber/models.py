@@ -37,6 +37,7 @@ def get_local_asr():
         with _lock:
             if _cache["asr"] is None:
                 import onnx_asr
+                import onnxruntime
 
                 providers = _PROVIDERS.get(LOCAL_ASR_DEVICE.lower())
                 if providers is None:
@@ -44,10 +45,17 @@ def get_local_asr():
                         f"LOCAL_ASR_DEVICE={LOCAL_ASR_DEVICE!r} is not supported; "
                         f"use {' or '.join(sorted(_PROVIDERS))}."
                     )
+                # The CPU arena keeps every buffer it ever grew to and never
+                # hands it back: whisper-large held ~8 GB after two 3-minute
+                # passes (vs ~1.8 GB without it), which then sat in swap for
+                # the life of the always-on service. ~10% slower inference.
+                options = onnxruntime.SessionOptions()
+                options.enable_cpu_mem_arena = False
                 model = onnx_asr.load_model(
                     LOCAL_ASR_MODEL,
                     LOCAL_ASR_PATH or None,
                     quantization=LOCAL_ASR_QUANTIZATION or None,
+                    sess_options=options,
                     providers=providers,
                 )
                 # VAD always runs on CPU: it is tiny, and keeping it off the GPU
